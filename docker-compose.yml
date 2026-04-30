@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  # 데이터베이스 서비스 (PostgreSQL)
+  db:
+    image: postgres:15
+    container_name: nrc_postgres_db
+    restart: always
+    environment:
+      POSTGRES_USER: nrc_user
+      POSTGRES_PASSWORD: nrc_pass
+      POSTGRES_DB: nrc_quiz_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432" # 로컬에서 DB 접속 확인용 (배포 시에는 막는 것을 추천)
+
+  # 백엔드 API 서비스 (FastAPI)
+  app:
+    build: ./backend
+    container_name: nrc_fastapi_app
+    restart: always
+    depends_on:
+      - db
+    environment:
+      DB_HOST: db
+      POSTGRES_USER: nrc_user
+      POSTGRES_PASSWORD: nrc_pass
+      POSTGRES_DB: nrc_quiz_db
+    ports:
+      - "8000:8000"
+
+  # 프론트엔드 추가 (기존 설정 복구)
+  frontend:
+    image: nginx:alpine
+    container_name: nrc-quiz-frontend
+    ports:
+      - "8080:80"
+    volumes:
+      - ./:/usr/share/nginx/html
+    restart: unless-stopped
+    depends_on:
+      - app
+
+volumes:
+  postgres_data:

@@ -1,0 +1,50 @@
+[Technical] 3.1 시스템 아키텍처 설계서
+프로젝트명: 영어 퀴즈 기반 NRC 리워드 플랫폼 (가칭: NRC-Walk & Quiz)
+버전: v1.0
+작성일: 2026. 04. 30
+작성자: 제자님 (개발 총괄)
+1. 아키텍처 개요 (System Overview)
+본 시스템은 클라이언트(모바일 앱)와 백엔드 서버 간의 효율적인 데이터 교환 및 보안을 최우선으로 한다. 특히 서버와 데이터베이스(DB)를 동일 네트워크 환경에 배치하여 **로컬 소통(Local Communication)**을 구현함으로써 지연 시간을 최소화하고 보안성을 극대화한다.
+2. 기술 스택 (Technology Stack)
+계층 (Layer)
+기술 (Technology)
+선택 사유
+Frontend
+Flutter (Dart)
+iOS/Android 동시 대응, 뛰어난 UI 성능 및 Google AdMob 연동 용이.
+Backend API
+FastAPI (Python)
+비동기 처리(Async) 지원으로 대규모 퀴즈 요청 처리 최적화, 개발 속도 우수.
+Database
+PostgreSQL
+강력한 데이터 무결성 보장, 리워드(숫자) 데이터 처리에 적합한 관계형 DB.
+Infrastructure
+Docker / Docker Compose
+서버와 DB를 컨테이너로 묶어 일관된 개발/운영 환경 및 로컬 소통 보장.
+Monitoring
+Sentry / Prometheus
+실시간 에러 추적 및 서버 부하 모니터링.
+3. 물리적 아키텍처 및 로컬 소통 구조
+3.1 서버-DB 로컬 통신 (Loopback)
+백엔드(FastAPI)와 DB(PostgreSQL)는 동일한 호스트 서버 내부에서 작동한다.
+DB는 외부 포트를 개방하지 않고 127.0.0.1 (localhost) 또는 Docker 내부 네트워크를 통해서만 백엔드와 소통한다.
+이를 통해 외부에서의 직접적인 DB 해킹 시도를 원천 차단한다.
+3.2 클라이언트 통신
+앱은 HTTPS 프로토콜을 통해 백엔드 서버의 API 엔드포인트와 소통한다.
+정적 자산(이미지, 퀴즈 오디오 등)은 CDN 또는 별도의 오브젝트 스토리지(GCS/S3)를 활용하여 서버 부하를 분산한다.
+4. 데이터 흐름 (Data Flow) - 퀴즈 검증 시나리오
+[App]: 사용자가 퀴즈의 정답(예: 3번 보기)을 선택한다.
+[App → API]: 사용자의 식별값(JWT), 퀴즈 ID, 선택한 보기 정보를 담아 암호화된 API 요청을 보낸다.
+[API → DB]: FastAPI가 로컬 소통을 통해 DB에서 해당 퀴즈의 실제 정답을 조회한다.
+[API]: 서버 사이드에서 정답 여부를 판별하고 지급할 포인트를 계산한다.
+[API → DB]: 사용자의 Total_Point를 업데이트하고 상세 적립 로그를 기록한다.
+[API → App]: 최종 결과(성공/실패) 및 업데이트된 포인트를 앱에 반환한다.
+5. 보안 아키텍처 (Security Architecture)
+인증 및 인가: **JWT(JSON Web Token)**를 사용하여 모든 API 요청의 유효성을 검사한다.
+통신 암호화: SSL/TLS (HTTPS) 인증서를 적용하여 클라이언트-서버 간 데이터 스니핑을 방지한다.
+DB 접근 제어: DB 계정은 최소 권한 원칙(Principle of Least Privilege)을 적용하여 백엔드 서버용 계정만 생성하여 사용한다.
+어뷰징 방지 레이어: 요청 빈도 제한(Rate Limiting)을 적용하여 특정 IP에서의 과도한 API 호출을 차단한다.
+6. 확장 및 백업 계획 (Scalability & Backup)
+수평적 확장: 사용자가 늘어날 경우 Docker 컨테이너를 늘리고 로드밸런서(Nginx 등)를 배치하여 부하를 분산한다.
+데이터 백업: 매일 새벽 04시에 PostgreSQL 전체 덤프(Dump)를 생성하여 외부 클라우드 저장소(Google Drive API 등)로 자동 전송한다.
+기술적 특이사항: 본 시스템은 제자님의 개발 환경에 맞춰 Python 기반의 FastAPI를 주축으로 하며, 추후 AI 퀴즈 생성 로직(LLM 연동)을 서버 사이드에서 직접 호출하기 용이하도록 설계됨.

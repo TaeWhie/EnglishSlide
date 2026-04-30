@@ -1,0 +1,158 @@
+[Technical] 3.2 데이터베이스 스키마 설계서 (ERD)
+프로젝트명: 영어 퀴즈 기반 NRC 리워드 플랫폼 (가칭: NRC-Walk & Quiz)
+버전: v1.0
+작성일: 2026. 04. 30
+작성자: 제자님 (개발 총괄)
+1. 설계 원칙 (Design Principles)
+데이터 무결성: 포인트(재화)와 관련된 모든 수치는 소수점 오차를 방지하고, 모든 변경 이력을 로그로 남긴다.
+보안: 사용자 비밀번호는 단방향 암호화하여 저장하며, 기기 식별값(UUID)을 통해 중복 가입을 방지한다.
+성능: 퀴즈 조회 및 포인트 적립 시 인덱스(Index)를 최적화하여 로컬 소통 속도를 극대화한다.
+2. 엔티티 관계도 (Entity Relationship Summary)
+Users (1) : (N) Point_Logs
+Quizzes (1) : (N) Solved_Logs
+Users (1) : (N) Exchanges
+3. 상세 테이블 명세 (Table Specifications)
+3.1 Users (사용자 정보)
+사용자의 기본 정보 및 NRC 연동 데이터를 관리합니다.
+필드명
+타입
+제약 조건
+설명
+user_id
+UUID
+PK
+사용자의 고유 식별자
+nrc_id
+VARCHAR(50)
+Unique, Nullable
+NRC 회원 번호 (실적 연동용)
+device_uuid
+VARCHAR(100)
+Unique
+기기 고유 식별값 (어뷰징 방지)
+total_points
+INTEGER
+Default 0
+현재 보유 중인 가용 포인트
+streak_count
+INTEGER
+Default 0
+연속 퀴즈 참여 일수
+last_active_at
+TIMESTAMP
+최종 접속 시간
+created_at
+TIMESTAMP
+Default NOW()
+가입 일시
+3.2 Quizzes (퀴즈 콘텐츠)
+영어 학습용 퀴즈 데이터를 담습니다.
+필드명
+타입
+제약 조건
+설명
+quiz_id
+BIGSERIAL
+PK
+퀴즈 고유 번호
+question
+TEXT
+Not Null
+퀴즈 문제 (텍스트 또는 오디오 경로)
+options
+JSONB
+Not Null
+4지선다 보기 데이터
+correct_idx
+INTEGER
+Not Null
+정답 인덱스 (0~3)
+level
+SMALLINT
+1~3
+난이도 (초/중/고급)
+category
+VARCHAR(30)
+퀴즈 카테고리 (Daily, Business 등)
+is_ai_generated
+BOOLEAN
+Default FALSE
+AI 생성 여부
+3.3 Point_Logs (포인트 적립/차감 이력)
+모든 포인트 변화를 기록하는 가장 중요한 테이블입니다.
+필드명
+타입
+제약 조건
+설명
+log_id
+BIGSERIAL
+PK
+로그 고유 번호
+user_id
+UUID
+FK (Users)
+포인트 주체
+amount
+INTEGER
+Not Null
+변화량 (양수는 적립, 음수는 사용)
+reason
+VARCHAR(50)
+사유 (Quiz_Success, Walk, Ad_Bonus 등)
+quiz_id
+BIGINT
+FK (Quizzes), Null
+어떤 문제로 얻었는지 기록
+created_at
+TIMESTAMP
+Default NOW()
+기록 시점
+3.4 Ad_Revenue_Stats (일일 광고 수익 통계)
+투명한 수익 공개를 위한 일자별 광고 통계 데이터입니다.
+필드명
+타입
+제약 조건
+설명
+stat_date
+DATE
+PK
+해당 날짜
+total_revenue
+DECIMAL(15,2)
+Not Null
+해당 날짜 총 광고 수익 (KRW)
+ad_platform
+VARCHAR(20)
+AdMob, UnityAds 등
+user_payout_rate
+DECIMAL(5,2)
+Default 95.0
+사용자 배분율
+3.5 Exchanges (포인트 교환/매출 전환)
+포인트가 실제 상품권이나 NRC 서비스로 전환된 기록입니다.
+필드명
+타입
+제약 조건
+설명
+exchange_id
+BIGSERIAL
+PK
+교환 고유 번호
+user_id
+UUID
+FK (Users)
+교환 신청자
+item_type
+VARCHAR(50)
+N-Telecom, N-Voin, Product 등
+coupon_code
+VARCHAR(100)
+발급된 쿠폰 번호 혹은 전산 코드
+status
+VARCHAR(20)
+Pending, Completed, Expired
+4. 인덱스 및 최적화 전략 (Optimization)
+idx_users_device: device_uuid에 인덱스를 걸어 로그인 시 기기 확인 속도를 높임.
+idx_point_logs_user: 특정 사용자의 적립 내역 조회 시 성능 확보.
+idx_quizzes_random: 매일 새로운 문제를 무작위로 추출할 때 성능 저하 방지를 위한 전략적 인덱스 구성.
+개발자 노트: 모든 금융 성격의 포인트 계산은 소수점 문제를 피하기 위해 정수(Integer) 단위를 기본으로 하되, 원천 광고 수익 데이터(Ad_Revenue_Stats)만 소수점을 허용하여 오차 없는 정산을 보장함.

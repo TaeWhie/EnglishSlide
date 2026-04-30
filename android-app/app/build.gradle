@@ -1,0 +1,15 @@
+apply plugin: "com.android.application"
+
+android {
+    namespace "com.nrc.quiz"
+    compileSdk 34
+    buildToolsVersion "35.0.0"
+
+    defaultConfig {
+        applicationId "com.nrc.quiz"
+        minSdk 23
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+    }
+}

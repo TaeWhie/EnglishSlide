@@ -1,0 +1,35 @@
+{
+  "packageId": "com.nrc.walkquiz",
+  "host": "example.com",
+  "name": "NRC Quiz",
+  "launcherName": "NRC Quiz",
+  "display": "standalone",
+  "themeColor": "#1967d2",
+  "themeColorDark": "#13233b",
+  "navigationColor": "#ffffff",
+  "navigationColorDark": "#13233b",
+  "backgroundColor": "#f3f7fb",
+  "enableNotifications": false,
+  "startUrl": "/index.html",
+  "iconUrl": "https://example.com/assets/icon-512.png",
+  "maskableIconUrl": "https://example.com/assets/icon-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./release.keystore",
+    "alias": "nrc_walk_quiz"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [
+    {
+      "name": "오늘의 퀴즈",
+      "short_name": "퀴즈",
+      "url": "/index.html#quiz"
+    },
+    {
+      "name": "포인트 상점",
+      "short_name": "상점",
+      "url": "/index.html#shop"
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+[Technical] 3.3 API 명세서 (API Specifications)
+프로젝트명: 영어 퀴즈 기반 NRC 리워드 플랫폼 (가칭: NRC-Walk & Quiz)
+버전: v1.0
+작성일: 2026. 04. 30
+작성자: 제자님 (개발 총괄)
+1. 개요 (Introduction)
+본 API는 FastAPI(Python) 기반으로 구축되며, 모든 통신은 JSON 형식을 사용한다. 보안을 위해 모든 요청은 헤더에 **JWT(JSON Web Token)**를 포함해야 하며, 정답 검증 및 포인트 지급 로직은 서버 내부에서 처리한다.
+Base URL: https://api.nrc-walkquiz.com/v1 (로컬 테스트 시 http://127.0.0.1:8000)
+공통 헤더: Authorization: Bearer {Access_Token}
+2. 인증 및 유저 API (Auth & User)
+2.1 기기 기반 자동 로그인
+Endpoint: POST /auth/device-login
+설명: 기기 UUID를 기반으로 로그인하며, 신규 기기일 경우 자동 가입 처리.
+Request Body:{  "device_uuid": "string",  "nrc_id": "string (optional)"}
+Response (Success): 200 OK{  "access_token": "jwt_token_string",  "user_id": "uuid",  "total_points": 1250}
+3. 퀴즈 API (Quiz System)
+3.1 퀴즈 목록 조회
+Endpoint: GET /quizzes/daily
+설명: 사용자의 난이도에 맞는 오늘자 퀴즈 10문제를 무작위로 호출.
+Response: 200 OK[  {    "quiz_id": 1025,    "question": "다음 중 '협상'의 뜻을 가진 영단어는?",    "options": ["Negotiation", "Agreement", "Transaction", "Contract"],    "level": 2  }]
+3.2 정답 제출 및 포인트 지급 (핵심 보안 로직)
+Endpoint: POST /quizzes/verify
+설명: 사용자가 고른 보기의 인덱스를 보내면 서버가 정답을 확인하고 DB에 포인트를 적립함.
+Request Body:{  "quiz_id": 1025,  "selected_idx": 0}
+Response (Correct): 200 OK{  "is_correct": true,  "correct_idx": 0,  "earned_points": 10,  "current_total_points": 1260,  "message": "정답입니다! 10포인트가 적립되었습니다."}
+4. 포인트 및 리워드 API (Rewards)
+4.1 포인트 상점 상품 목록
+Endpoint: GET /rewards/items
+설명: 포인트로 교환 가능한 NRC 상품권 및 통신 충전권 목록 조회.
+Response: 200 OK[  {    "item_id": "ntel_10k",    "name": "앤텔레콤 1만원 충전권",    "price_points": 9000,    "description": "포인트 결제 시 10% 추가 할인"  }]
+4.2 상품 교환 신청
+Endpoint: POST /rewards/exchange
+설명: 보유 포인트를 차감하고 NRC 연동용 쿠폰 번호 발급.
+Request Body:{ "item_id": "ntel_10k" }
+Response: 200 OK{  "exchange_id": 55,  "coupon_code": "NRC-XXXX-YYYY",  "remaining_points": 1200}
+5. 투명성 및 통계 API (Statistics)
+5.1 일일 전체 수익 현황
+Endpoint: GET /stats/revenue/today
+설명: 메인 화면에 표시할 오늘 앱의 총 광고 수익 및 환원 현황.
+Response: 200 OK{  "total_ad_revenue": 1250400,  "total_payout_points": 1187880,  "payout_ratio": 95.0}
+6. 에러 코드 정의 (Error Codes)
+코드
+설명
+대응 방안
+401
+Unauthorized
+토큰 만료, 다시 로그인 필요
+403
+Forbidden (Abusing)
+어뷰징 감지, 해당 요청 무시
+404
+Not Found
+잘못된 퀴즈 ID 또는 상품 ID
+429
+Too Many Requests
+API 호출 빈도 초과 (Rate Limit)
+개발자 참고: POST /quizzes/verify 요청 시 서버는 내부적으로 Solved_Logs를 남기며, 1초 이내에 동일 유저가 같은 퀴즈에 대해 중복 요청을 보낼 경우 403 에러를 반환하여 어뷰징을 차단함.
