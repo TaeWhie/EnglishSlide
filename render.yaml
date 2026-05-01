@@ -14,7 +14,7 @@ services:
       - key: PORT
         value: 10000
       - key: GOOGLE_CLIENT_ID
-        sync: false
+        value: 358180637858-1cc70si61cjnftpeckfnvqps7onbbr0q.apps.googleusercontent.com
 
 databases:
   - name: nrc-postgres
