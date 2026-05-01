@@ -16,45 +16,6 @@ services:
       - key: GOOGLE_CLIENT_ID
         sync: false
 
-  - type: web
-    name: nrc-frontend
-    runtime: static
-    rootDir: .
-    buildCommand: |
-      printf 'window.NRC_APP_CONFIG = { apiBase: "%s", googleClientId: "%s" };\n' "$API_BASE" "$GOOGLE_CLIENT_ID" > env.js
-      python - <<'PY'
-      import os
-      from pathlib import Path
-
-      index_path = Path("index.html")
-      index_html = index_path.read_text(encoding="utf-8")
-      if '<script src="./env.js"></script>' not in index_html:
-          index_html = index_html.replace(
-              '<script src="./app.js?v=google-login"></script>',
-              '<script src="./env.js"></script>\n    <script src="./app.js?v=google-login"></script>',
-          )
-          index_html = index_html.replace(
-              '<script src="./app.js?v=google-sso"></script>',
-              '<script src="./env.js"></script>\n    <script src="./app.js?v=google-sso"></script>',
-          )
-          index_path.write_text(index_html, encoding="utf-8")
-
-      app_path = Path("app.js")
-      app_js = app_path.read_text(encoding="utf-8")
-      app_js = app_js.replace("https://your-backend-service.onrender.com/v1", os.environ["API_BASE"])
-      app_path.write_text(app_js, encoding="utf-8")
-      PY
-    staticPublishPath: .
-    envVars:
-      - key: API_BASE
-        value: https://nrc-backend-llgx.onrender.com/v1
-      - key: GOOGLE_CLIENT_ID
-        sync: false
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
-
 databases:
   - name: nrc-postgres
     databaseName: nrc_quiz_db
