@@ -47,7 +47,7 @@ services:
     staticPublishPath: .
     envVars:
       - key: API_BASE
-        value: https://nrc-backend.onrender.com/v1
+        value: https://nrc-backend-llgx.onrender.com/v1
       - key: GOOGLE_CLIENT_ID
         sync: false
     routes:
