@@ -156,6 +156,47 @@ const state = {
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
+let loadingDepth = 0;
+
+function showLoading(title = "처리 중", message = "서버와 통신하고 있습니다.") {
+  const overlay = $("#loadingOverlay");
+  if (!overlay) return;
+  $("#loadingTitle").textContent = title;
+  $("#loadingMessage").textContent = message;
+  loadingDepth += 1;
+  overlay.classList.remove("hidden");
+}
+
+function hideLoading() {
+  const overlay = $("#loadingOverlay");
+  if (!overlay) return;
+  loadingDepth = Math.max(0, loadingDepth - 1);
+  if (loadingDepth === 0) {
+    overlay.classList.add("hidden");
+  }
+}
+
+async function withLoading(title, message, task) {
+  showLoading(title, message);
+  try {
+    return await task();
+  } finally {
+    hideLoading();
+  }
+}
+
+function setButtonBusy(button, busy, label = "처리 중") {
+  if (!button) return;
+  if (busy) {
+    button.dataset.idleText = button.textContent;
+    button.textContent = label;
+  } else if (button.dataset.idleText) {
+    button.textContent = button.dataset.idleText;
+    delete button.dataset.idleText;
+  }
+  button.disabled = busy;
+  button.classList.toggle("is-loading", busy);
+}
 
 function formatNumber(value) {
   return new Intl.NumberFormat("ko-KR").format(value);
@@ -213,6 +254,7 @@ function renderProfile() {
 }
 
 function completeGoogleStep(googleUser) {
+  setButtonBusy($("#googleLoginButton"), false);
   pendingGoogleUser = googleUser;
   $("#googleLoginButton").classList.add("hidden");
   $("#loginForm").classList.remove("hidden");
@@ -235,6 +277,7 @@ function normalizeNativeGooglePayload(payload) {
 window.onNativeGoogleSignIn = (payload) => {
   const googleUser = normalizeNativeGooglePayload(payload);
   if (!googleUser || googleUser.status === "pending") return;
+  setButtonBusy($("#googleLoginButton"), false);
   if (googleUser.status === "unconfigured") {
     showToast(googleUser.message || "Google Client ID is not configured.");
     return;
@@ -247,6 +290,7 @@ window.onNativeGoogleSignIn = (payload) => {
 };
 
 window.onNativeGoogleSignInError = (message) => {
+  setButtonBusy($("#googleLoginButton"), false);
   showToast(message || "Google 로그인에 실패했습니다.");
 };
 
@@ -548,10 +592,12 @@ function renderLockscreenSettings() {
 
 function bindEvents() {
   $("#googleLoginButton").addEventListener("click", () => {
+    setButtonBusy($("#googleLoginButton"), true, "Google 확인 중");
     if (window.NRCBridge?.googleSignIn) {
       try {
         window.onNativeGoogleSignIn(window.NRCBridge.googleSignIn());
       } catch {
+        setButtonBusy($("#googleLoginButton"), false);
         showToast("Google 로그인 정보를 확인하지 못했습니다.");
       }
       return;
@@ -576,13 +622,19 @@ function bindEvents() {
       showToast("닉네임을 입력해 주세요.");
       return;
     }
+    const submitButton = event.submitter || $("#loginForm button[type='submit']");
+    setButtonBusy(submitButton, true, "로그인 중");
     try {
-      const res = await apiCall("/auth/google-login", "POST", {
-        google_sub: pendingGoogleUser.googleSub,
-        email: pendingGoogleUser.email || "",
-        nickname,
-        id_token: pendingGoogleUser.idToken || pendingGoogleUser.id_token || ""
-      });
+      const res = await withLoading(
+        "로그인 중",
+        "계정 정보를 확인하고 있습니다.",
+        () => apiCall("/auth/google-login", "POST", {
+          google_sub: pendingGoogleUser.googleSub,
+          email: pendingGoogleUser.email || "",
+          nickname,
+          id_token: pendingGoogleUser.idToken || pendingGoogleUser.id_token || ""
+        })
+      );
 
       state.user = {
         provider: "google",
@@ -602,6 +654,8 @@ function bindEvents() {
       showToast("로그인되었습니다.");
     } catch (err) {
       showToast(err.message || "로그인 처리 중 오류가 발생했습니다.");
+    } finally {
+      setButtonBusy(submitButton, false);
     }
   });
 

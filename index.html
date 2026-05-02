@@ -196,6 +196,13 @@
       </nav>
     </main>
 
+    <div id="loadingOverlay" class="loading-overlay hidden" role="status" aria-live="polite">
+      <div class="loading-panel">
+        <span class="loading-spinner" aria-hidden="true"></span>
+        <strong id="loadingTitle">처리 중</strong>
+        <p id="loadingMessage">서버와 통신하고 있습니다.</p>
+      </div>
+    </div>
     <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
     <script src="./app.js?v=google-login"></script>

@@ -29,6 +29,47 @@ const state = {
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
+let loadingDepth = 0;
+
+function showLoading(title = "처리 중", message = "서버와 통신하고 있습니다.") {
+  const overlay = $("#loadingOverlay");
+  if (!overlay) return;
+  $("#loadingTitle").textContent = title;
+  $("#loadingMessage").textContent = message;
+  loadingDepth += 1;
+  overlay.classList.remove("hidden");
+}
+
+function hideLoading() {
+  const overlay = $("#loadingOverlay");
+  if (!overlay) return;
+  loadingDepth = Math.max(0, loadingDepth - 1);
+  if (loadingDepth === 0) {
+    overlay.classList.add("hidden");
+  }
+}
+
+async function withLoading(title, message, task) {
+  showLoading(title, message);
+  try {
+    return await task();
+  } finally {
+    hideLoading();
+  }
+}
+
+function setButtonBusy(button, busy, label = "처리 중") {
+  if (!button) return;
+  if (busy) {
+    button.dataset.idleText = button.textContent;
+    button.textContent = label;
+  } else if (button.dataset.idleText) {
+    button.textContent = button.dataset.idleText;
+    delete button.dataset.idleText;
+  }
+  button.disabled = busy;
+  button.classList.toggle("is-loading", busy);
+}
 
 async function apiCall(endpoint, method = 'GET', body = null) {
   const options = {
@@ -106,6 +147,7 @@ function renderProfile() {
 }
 
 function completeGoogleStep(googleUser) {
+  setButtonBusy($("#googleLoginButton"), false);
   pendingGoogleUser = googleUser;
   $("#googleLoginButton").classList.add("hidden");
   $("#loginForm").classList.remove("hidden");
@@ -128,6 +170,7 @@ function normalizeNativeGooglePayload(payload) {
 window.onNativeGoogleSignIn = (payload) => {
   const googleUser = normalizeNativeGooglePayload(payload);
   if (!googleUser || googleUser.status === "pending") return;
+  setButtonBusy($("#googleLoginButton"), false);
   if (googleUser.status === "unconfigured") {
     showToast(googleUser.message || "Google Client ID is not configured.");
     return;
@@ -140,6 +183,7 @@ window.onNativeGoogleSignIn = (payload) => {
 };
 
 window.onNativeGoogleSignInError = (message) => {
+  setButtonBusy($("#googleLoginButton"), false);
   showToast(message || "Google 로그인에 실패했습니다.");
 };
 
@@ -266,7 +310,11 @@ async function renderQuiz() {
 
   if (state.quizzes.length === 0) {
     try {
-      state.quizzes = await apiCall('/quizzes/daily');
+      state.quizzes = await withLoading(
+        "퀴즈 로딩 중",
+        "오늘의 문제를 불러오고 있습니다.",
+        () => apiCall('/quizzes/daily')
+      );
     } catch (e) {
       showToast("퀴즈를 불러오지 못했습니다.");
       return;
@@ -301,11 +349,15 @@ async function verifyAnswer(selectedIndex) {
   const selectedAnswer = selectedIndex >= 0 ? quiz.options[selectedIndex] : "시간 초과";
   
   try {
-    const res = await apiCall('/quizzes/verify', 'POST', {
-      user_id: state.user.user_id,
-      quiz_id: quiz.quiz_id,
-      selected_idx: selectedIndex
-    });
+    const res = await withLoading(
+      "채점 중",
+      "정답과 포인트를 확인하고 있습니다.",
+      () => apiCall('/quizzes/verify', 'POST', {
+        user_id: state.user.user_id,
+        quiz_id: quiz.quiz_id,
+        selected_idx: selectedIndex
+      })
+    );
 
     const isCorrect = res.is_correct;
     const earned = res.earned_points;
@@ -348,6 +400,8 @@ async function verifyAnswer(selectedIndex) {
     updateStats();
   } catch (err) {
     state.locked = false;
+    $$(".option-button").forEach((button) => button.disabled = false);
+    showToast(err.message || "채점 중 오류가 발생했습니다.");
   }
 }
 
@@ -365,7 +419,11 @@ function nextQuiz() {
 async function renderShop() {
   if (state.shopItems.length === 0) {
     try {
-      state.shopItems = await apiCall('/rewards/items');
+      state.shopItems = await withLoading(
+        "상점 로딩 중",
+        "교환 목록을 불러오고 있습니다.",
+        () => apiCall('/rewards/items')
+      );
     } catch (e) {
       showToast("상점 목록을 불러오지 못했습니다.");
       return;
@@ -400,10 +458,14 @@ async function exchangeItem(itemId) {
   }
   
   try {
-    const res = await apiCall('/rewards/exchange', 'POST', {
-      user_id: state.user.user_id,
-      item_id: itemId
-    });
+    const res = await withLoading(
+      "교환 처리 중",
+      "쿠폰을 발급하고 있습니다.",
+      () => apiCall('/rewards/exchange', 'POST', {
+        user_id: state.user.user_id,
+        item_id: itemId
+      })
+    );
     
     state.points = res.remaining_points;
     state.coupons.unshift(res.coupon);
@@ -411,6 +473,7 @@ async function exchangeItem(itemId) {
     updateStats();
     showToast(`${res.coupon.name} 교환 완료. 마이페이지 쿠폰함에서 확인할 수 있습니다.`);
   } catch (err) {
+    showToast(err.message || "교환 처리 중 오류가 발생했습니다.");
   }
 }
 
@@ -486,10 +549,12 @@ async function renderLockscreenSettings() {
 
 function bindEvents() {
   $("#googleLoginButton").addEventListener("click", () => {
+    setButtonBusy($("#googleLoginButton"), true, "Google 확인 중");
     if (window.NRCBridge?.googleSignIn) {
       try {
         window.onNativeGoogleSignIn(window.NRCBridge.googleSignIn());
       } catch {
+        setButtonBusy($("#googleLoginButton"), false);
         showToast("Google 로그인 정보를 확인하지 못했습니다.");
       }
       return;
@@ -515,13 +580,19 @@ function bindEvents() {
       return;
     }
     
+    const submitButton = event.submitter || $("#loginForm button[type='submit']");
+    setButtonBusy(submitButton, true, "로그인 중");
     try {
-      const res = await apiCall('/auth/google-login', 'POST', {
-        google_sub: pendingGoogleUser.googleSub,
-        email: pendingGoogleUser.email || "",
-        nickname: nickname,
-        id_token: pendingGoogleUser.idToken || pendingGoogleUser.id_token || ""
-      });
+      const res = await withLoading(
+        "로그인 중",
+        "계정 정보를 확인하고 있습니다.",
+        () => apiCall('/auth/google-login', 'POST', {
+          google_sub: pendingGoogleUser.googleSub,
+          email: pendingGoogleUser.email || "",
+          nickname: nickname,
+          id_token: pendingGoogleUser.idToken || pendingGoogleUser.id_token || ""
+        })
+      );
       
       state.user = {
         provider: "google",
@@ -541,6 +612,8 @@ function bindEvents() {
       showToast("로그인되었습니다.");
     } catch (err) {
       showToast(err.message || "로그인 처리 중 오류가 발생했습니다.");
+    } finally {
+      setButtonBusy(submitButton, false);
     }
   });
 
