@@ -249,8 +249,27 @@ public class MainActivity extends Activity {
             if (googleSignInClient == null) {
                 return "{\"status\":\"unconfigured\",\"message\":\"Google Client ID is not configured.\"}";
             }
-            runOnUiThread(() -> startActivityForResult(googleSignInClient.getSignInIntent(), RC_GOOGLE_SIGN_IN));
+            runOnUiThread(() -> {
+                if (firebaseAuth != null) {
+                    firebaseAuth.signOut();
+                }
+                googleSignInClient.signOut().addOnCompleteListener(task ->
+                        startActivityForResult(googleSignInClient.getSignInIntent(), RC_GOOGLE_SIGN_IN)
+                );
+            });
             return "{\"status\":\"pending\"}";
+        }
+
+        @JavascriptInterface
+        public void signOut() {
+            runOnUiThread(() -> {
+                if (firebaseAuth != null) {
+                    firebaseAuth.signOut();
+                }
+                if (googleSignInClient != null) {
+                    googleSignInClient.signOut();
+                }
+            });
         }
     }
 }

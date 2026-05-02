@@ -2,7 +2,7 @@
 // TODO: 배포 후 your-backend-service.onrender.com 부분을 실제 백엔드 주소로 변경하세요.
 const API_BASE = window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost"
   ? "http://127.0.0.1:8000/v1"
-  : "https://your-backend-service.onrender.com/v1";
+  : "https://nrc-backend.onrender.com/v1";
 
 const todayKey = new Date().toISOString().slice(0, 10);
 const savedDaily = JSON.parse(localStorage.getItem("nrc_daily_quiz") || "{}");
@@ -531,11 +531,16 @@ function bindEvents() {
       updateStats();
       showToast("로그인되었습니다.");
     } catch (err) {
+      showToast(err.message || "로그인 처리 중 오류가 발생했습니다.");
     }
   });
 
   $("#logoutButton").addEventListener("click", () => {
+    if (window.NRCBridge?.signOut) {
+      window.NRCBridge.signOut();
+    }
     localStorage.removeItem("nrc_user_profile");
+    localStorage.removeItem("nrc_daily_quiz");
     state.user = null;
     showLogin();
     showToast("로그아웃되었습니다.");

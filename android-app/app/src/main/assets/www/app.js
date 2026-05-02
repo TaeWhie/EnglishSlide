@@ -1,3 +1,19 @@
+const API_BASE = "https://nrc-backend.onrender.com/v1";
+
+async function apiCall(endpoint, method = "GET", body = null) {
+  const options = {
+    method,
+    headers: { "Content-Type": "application/json" }
+  };
+  if (body) options.body = JSON.stringify(body);
+  const res = await fetch(`${API_BASE}${endpoint}`, options);
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "API Error" }));
+    throw new Error(error.detail || "API 오류가 발생했습니다.");
+  }
+  return res.json();
+}
+
 const quizzes = [
   {
     question: "다음 중 '혜택'이라는 뜻을 가진 단어는?",
@@ -541,7 +557,7 @@ function bindEvents() {
     showToast("브라우저 미리보기에서는 Google 로그인 단계를 시뮬레이션합니다.");
   });
 
-  $("#loginForm").addEventListener("submit", (event) => {
+  $("#loginForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const nickname = $("#loginName").value.trim();
     if (!pendingGoogleUser) {
@@ -552,23 +568,41 @@ function bindEvents() {
       showToast("닉네임을 입력해 주세요.");
       return;
     }
-    state.user = {
-      provider: "google",
-      googleSub: pendingGoogleUser.googleSub,
-      email: pendingGoogleUser.email || "",
-      nickname,
-      userId: `google-${pendingGoogleUser.googleSub || Date.now()}`,
-      loggedInAt: new Date().toISOString()
-    };
-    localStorage.setItem("nrc_user_profile", JSON.stringify(state.user));
-    showApp();
-    renderProfile();
-    updateOsRuntime();
-    showToast("로그인되었습니다.");
+    try {
+      const res = await apiCall("/auth/google-login", "POST", {
+        google_sub: pendingGoogleUser.googleSub,
+        email: pendingGoogleUser.email || "",
+        nickname,
+        id_token: pendingGoogleUser.idToken || pendingGoogleUser.id_token || ""
+      });
+
+      state.user = {
+        provider: "google",
+        googleSub: pendingGoogleUser.googleSub,
+        email: pendingGoogleUser.email || "",
+        nickname: res.nickname,
+        user_id: res.user_id,
+        access_token: res.access_token,
+        total_points: res.total_points,
+        loggedInAt: new Date().toISOString()
+      };
+      state.points = res.total_points;
+      localStorage.setItem("nrc_user_profile", JSON.stringify(state.user));
+      showApp();
+      renderProfile();
+      updateOsRuntime();
+      showToast("로그인되었습니다.");
+    } catch (err) {
+      showToast(err.message || "로그인 처리 중 오류가 발생했습니다.");
+    }
   });
 
   $("#logoutButton").addEventListener("click", () => {
+    if (window.NRCBridge?.signOut) {
+      window.NRCBridge.signOut();
+    }
     localStorage.removeItem("nrc_user_profile");
+    localStorage.removeItem("nrc_daily_quiz");
     state.user = null;
     showLogin();
     showToast("로그아웃되었습니다.");
