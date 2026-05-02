@@ -266,6 +266,13 @@ function saveCoupons() {
 
 function saveLockscreenSettings() {
   localStorage.setItem("nrc_lockscreen_settings", JSON.stringify(state.lockscreen));
+  syncNativeLockscreenSettings();
+}
+
+function syncNativeLockscreenSettings() {
+  if (window.NRCBridge?.updateLockscreenSettings) {
+    window.NRCBridge.updateLockscreenSettings(Boolean(state.lockscreen.enabled), Boolean(state.lockscreen.rewardPrompt));
+  }
 }
 
 function updateGoalSummary() {
@@ -536,6 +543,7 @@ function renderLockscreenSettings() {
   if (!enabled || !reward) return;
   enabled.checked = state.lockscreen.enabled;
   reward.checked = state.lockscreen.rewardPrompt;
+  syncNativeLockscreenSettings();
 }
 
 function bindEvents() {

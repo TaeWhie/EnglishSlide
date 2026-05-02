@@ -155,10 +155,18 @@ function updateProfileStats() {
 
 async function saveLockscreenSettings() {
   if (!state.user) return;
+  syncNativeLockscreenSettings();
   try {
     await apiCall(`/settings/lockscreen?user_id=${state.user.user_id}`, 'PUT', state.lockscreen);
   } catch (err) {
     console.error(err);
+  }
+}
+
+function syncNativeLockscreenSettings() {
+  if (window.NRCBridge?.updateLockscreenSettings) {
+    const rewardPrompt = state.lockscreen.reward_prompt ?? state.lockscreen.rewardPrompt ?? true;
+    window.NRCBridge.updateLockscreenSettings(Boolean(state.lockscreen.enabled), Boolean(rewardPrompt));
   }
 }
 
@@ -473,6 +481,7 @@ async function renderLockscreenSettings() {
 
   enabled.checked = state.lockscreen.enabled;
   reward.checked = state.lockscreen.reward_prompt ?? state.lockscreen.rewardPrompt ?? true;
+  syncNativeLockscreenSettings();
 }
 
 function bindEvents() {

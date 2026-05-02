@@ -5,6 +5,7 @@ import android.Manifest;
 import android.app.AlertDialog;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
@@ -65,6 +66,7 @@ public class MainActivity extends Activity {
         webView.setWebViewClient(new WebViewClient());
         webView.loadUrl("file:///android_asset/www/index.html");
         requestStartupPermissions();
+        syncLockscreenService();
     }
 
     private void configureSystemBars() {
@@ -103,6 +105,37 @@ public class MainActivity extends Activity {
         Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION);
         intent.setData(Uri.parse("package:" + getPackageName()));
         startActivity(intent);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        syncLockscreenService();
+    }
+
+    private void updateNativeLockscreenSettings(boolean enabled, boolean rewardPrompt) {
+        SharedPreferences prefs = getSharedPreferences(LockQuizOverlayService.PREFS, MODE_PRIVATE);
+        prefs.edit()
+                .putBoolean(LockQuizOverlayService.KEY_ENABLED, enabled)
+                .putBoolean(LockQuizOverlayService.KEY_REWARD_PROMPT, rewardPrompt)
+                .apply();
+        syncLockscreenService();
+    }
+
+    private void syncLockscreenService() {
+        SharedPreferences prefs = getSharedPreferences(LockQuizOverlayService.PREFS, MODE_PRIVATE);
+        boolean enabled = prefs.getBoolean(LockQuizOverlayService.KEY_ENABLED, false);
+        Intent service = new Intent(this, LockQuizOverlayService.class);
+        if (enabled && Settings.canDrawOverlays(this)) {
+            service.setAction(LockQuizOverlayService.ACTION_SYNC_SETTINGS);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(service);
+            } else {
+                startService(service);
+            }
+        } else {
+            stopService(service);
+        }
     }
 
     private void configureGoogleSignIn() {
@@ -242,6 +275,11 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void openOverlaySettings() {
             openOverlayPermissionSettings();
+        }
+
+        @JavascriptInterface
+        public void updateLockscreenSettings(boolean enabled, boolean rewardPrompt) {
+            runOnUiThread(() -> updateNativeLockscreenSettings(enabled, rewardPrompt));
         }
 
         @JavascriptInterface
