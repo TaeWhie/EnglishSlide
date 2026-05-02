@@ -2,7 +2,7 @@
 // TODO: 배포 후 your-backend-service.onrender.com 부분을 실제 백엔드 주소로 변경하세요.
 const API_BASE = window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost"
   ? "http://127.0.0.1:8000/v1"
-  : "https://nrc-backend.onrender.com/v1";
+  : "https://nrc-backend-llgx.onrender.com/v1";
 
 const todayKey = new Date().toISOString().slice(0, 10);
 const savedDaily = JSON.parse(localStorage.getItem("nrc_daily_quiz") || "{}");
