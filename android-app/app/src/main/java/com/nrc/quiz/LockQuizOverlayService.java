@@ -5,6 +5,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.app.KeyguardManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -12,6 +13,8 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -22,6 +25,7 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.FrameLayout;
 import android.widget.TextView;
 
 public class LockQuizOverlayService extends Service {
@@ -32,15 +36,19 @@ public class LockQuizOverlayService extends Service {
 
     private static final String CHANNEL_ID = "lock_quiz_service";
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Runnable autoRemoveOverlay = this::removeOverlay;
     private WindowManager windowManager;
+    private KeyguardManager keyguardManager;
     private View overlayView;
 
     private final BroadcastReceiver screenReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
-            if (Intent.ACTION_SCREEN_ON.equals(action) || Intent.ACTION_USER_PRESENT.equals(action)) {
-                showOverlay();
+            if (Intent.ACTION_SCREEN_ON.equals(action)) {
+                showOverlayIfLocked();
+            } else if (Intent.ACTION_USER_PRESENT.equals(action) || Intent.ACTION_SCREEN_OFF.equals(action)) {
+                removeOverlay();
             }
         }
     };
@@ -49,8 +57,10 @@ public class LockQuizOverlayService extends Service {
     public void onCreate() {
         super.onCreate();
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+        keyguardManager = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
         registerReceiver(screenReceiver, new IntentFilter(Intent.ACTION_SCREEN_ON));
         registerReceiver(screenReceiver, new IntentFilter(Intent.ACTION_USER_PRESENT));
+        registerReceiver(screenReceiver, new IntentFilter(Intent.ACTION_SCREEN_OFF));
         startForeground(41, buildNotification());
     }
 
@@ -62,7 +72,9 @@ public class LockQuizOverlayService extends Service {
             return START_NOT_STICKY;
         }
         if (intent != null && ACTION_SYNC_SETTINGS.equals(intent.getAction())) {
-            showOverlay();
+            if (!isEnabled()) {
+                removeOverlay();
+            }
         }
         return START_STICKY;
     }
@@ -124,50 +136,112 @@ public class LockQuizOverlayService extends Service {
         manager.createNotificationChannel(channel);
     }
 
+    private boolean isDeviceLocked() {
+        return keyguardManager != null && keyguardManager.isKeyguardLocked();
+    }
+
+    private void showOverlayIfLocked() {
+        if (!isDeviceLocked()) {
+            removeOverlay();
+            return;
+        }
+        showOverlay();
+    }
+
+    private GradientDrawable rounded(int color, float radius) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(color);
+        drawable.setCornerRadius(radius);
+        return drawable;
+    }
+
+    private TextView text(String value, int color, float size, int style) {
+        TextView view = new TextView(this);
+        view.setText(value);
+        view.setTextColor(color);
+        view.setTextSize(size);
+        view.setTypeface(Typeface.DEFAULT, style);
+        view.setGravity(Gravity.CENTER);
+        return view;
+    }
+
     private void showOverlay() {
-        if (!isEnabled() || !Settings.canDrawOverlays(this) || overlayView != null) return;
+        if (!isEnabled() || !Settings.canDrawOverlays(this) || overlayView != null || !isDeviceLocked()) return;
+
+        FrameLayout shell = new FrameLayout(this);
+        shell.setPadding(28, 28, 28, 0);
 
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(36, 30, 36, 30);
-        panel.setBackgroundColor(Color.rgb(18, 34, 59));
+        panel.setPadding(34, 30, 34, 30);
+        panel.setBackground(rounded(Color.WHITE, 26));
+        panel.setElevation(18f);
 
-        TextView label = new TextView(this);
-        label.setText("NRC Quiz");
-        label.setTextColor(Color.rgb(255, 218, 121));
-        label.setTextSize(13);
-        label.setGravity(Gravity.CENTER);
-        panel.addView(label);
+        TextView badge = text("잠금화면 퀴즈", Color.rgb(31, 108, 210), 13, Typeface.BOLD);
+        badge.setBackground(rounded(Color.rgb(237, 244, 255), 30));
+        badge.setPadding(18, 8, 18, 8);
+        LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        badgeParams.gravity = Gravity.CENTER_HORIZONTAL;
+        panel.addView(badge, badgeParams);
 
-        TextView question = new TextView(this);
-        question.setText("Benefit의 뜻은?");
-        question.setTextColor(Color.WHITE);
-        question.setTextSize(22);
-        question.setGravity(Gravity.CENTER);
-        question.setPadding(0, 18, 0, 12);
-        panel.addView(question);
+        TextView score = text("+10P", Color.rgb(18, 34, 59), 34, Typeface.BOLD);
+        score.setPadding(0, 18, 0, 0);
+        panel.addView(score);
 
-        TextView reward = new TextView(this);
-        reward.setText(rewardPromptEnabled() ? "정답 확인하고 포인트를 적립하세요." : "오늘의 영어 퀴즈를 확인하세요.");
-        reward.setTextColor(Color.rgb(215, 225, 238));
-        reward.setTextSize(14);
-        reward.setGravity(Gravity.CENTER);
-        panel.addView(reward);
+        TextView title = text("Benefit의 뜻은?", Color.rgb(18, 34, 59), 24, Typeface.BOLD);
+        title.setPadding(0, 8, 0, 0);
+        panel.addView(title);
+
+        TextView sub = text(
+                rewardPromptEnabled() ? "정답을 맞히고 오늘 포인트를 적립하세요." : "오늘의 영어 퀴즈를 확인하세요.",
+                Color.rgb(95, 107, 123),
+                15,
+                Typeface.NORMAL
+        );
+        sub.setPadding(0, 12, 0, 20);
+        panel.addView(sub);
+
+        LinearLayout options = new LinearLayout(this);
+        options.setOrientation(LinearLayout.VERTICAL);
+        options.addView(optionText("A. Benefit"));
+        options.addView(optionText("B. Battery"));
+        panel.addView(options);
 
         Button open = new Button(this);
         open.setText("앱에서 풀기");
+        open.setTextColor(Color.WHITE);
+        open.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        open.setBackground(rounded(Color.rgb(31, 108, 210), 18));
         open.setOnClickListener(v -> {
             Intent launch = new Intent(this, MainActivity.class);
             launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
             startActivity(launch);
             removeOverlay();
         });
-        panel.addView(open);
+        LinearLayout.LayoutParams openParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                58
+        );
+        openParams.setMargins(0, 22, 0, 8);
+        panel.addView(open, openParams);
 
         Button dismiss = new Button(this);
-        dismiss.setText("닫기");
+        dismiss.setText("나중에");
+        dismiss.setTextColor(Color.rgb(95, 107, 123));
+        dismiss.setBackgroundColor(Color.TRANSPARENT);
         dismiss.setOnClickListener(v -> removeOverlay());
-        panel.addView(dismiss);
+        panel.addView(dismiss, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                50
+        ));
+
+        shell.addView(panel, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+        ));
 
         int type = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -182,15 +256,30 @@ public class LockQuizOverlayService extends Service {
                 PixelFormat.TRANSLUCENT
         );
         params.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
-        params.y = 80;
+        params.y = 72;
 
-        overlayView = panel;
+        overlayView = shell;
         windowManager.addView(overlayView, params);
-        handler.postDelayed(this::removeOverlay, 15000);
+        handler.postDelayed(autoRemoveOverlay, 15000);
+    }
+
+    private TextView optionText(String value) {
+        TextView option = text(value, Color.rgb(18, 34, 59), 16, Typeface.BOLD);
+        option.setGravity(Gravity.CENTER_VERTICAL);
+        option.setBackground(rounded(Color.rgb(245, 248, 252), 16));
+        option.setPadding(20, 0, 20, 0);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                52
+        );
+        params.setMargins(0, 0, 0, 8);
+        option.setLayoutParams(params);
+        return option;
     }
 
     private void removeOverlay() {
         if (overlayView == null) return;
+        handler.removeCallbacks(autoRemoveOverlay);
         try {
             windowManager.removeView(overlayView);
         } catch (IllegalArgumentException ignored) {
