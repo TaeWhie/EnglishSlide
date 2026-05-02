@@ -386,10 +386,12 @@ function startTimer() {
   state.timer = 15;
   $("#timer").textContent = state.timer;
   $("#timer").classList.remove("warning");
+  $("#quizProgress").style.width = "100%";
   state.timerId = setInterval(() => {
     state.timer -= 1;
     $("#timer").textContent = state.timer;
     $("#timer").classList.toggle("warning", state.timer < 5);
+    $("#quizProgress").style.width = `${Math.max(0, (state.timer / 15) * 100)}%`;
     if (state.timer <= 0) {
       clearInterval(state.timerId);
       verifyAnswer(-1);
@@ -417,7 +419,6 @@ function renderQuiz() {
   $("#quizProgressWrap").classList.remove("hidden");
   $("#quizCategory").textContent = `${quiz.category} · Level ${quiz.level}`;
   $("#quizQuestion").textContent = quiz.question;
-  $("#quizProgress").style.width = `${((state.current % quizzes.length) + 1) * 10}%`;
   $("#quizComplete").classList.add("hidden");
   $("#reviewPanel").classList.add("hidden");
   $("#quizFeedback").classList.add("hidden");

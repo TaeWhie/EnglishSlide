@@ -149,7 +149,7 @@ button {
 .app-shell {
   display: block;
   min-height: 100vh;
-  padding-bottom: calc(86px + max(14px, env(safe-area-inset-bottom)));
+  padding-bottom: calc(112px + max(24px, env(safe-area-inset-bottom)));
 }
 
 .eyebrow {
@@ -429,8 +429,10 @@ h1 {
 .timer {
   display: grid;
   place-items: center;
+  flex: 0 0 58px;
   width: 58px;
   height: 58px;
+  aspect-ratio: 1;
   border-radius: 50%;
   background: #edf4ff;
   color: var(--blue);
@@ -455,7 +457,7 @@ h1 {
   width: 10%;
   height: 100%;
   background: linear-gradient(90deg, var(--blue), var(--green));
-  transition: width 240ms ease;
+  transition: width 1s linear;
 }
 
 .option-list {
@@ -618,6 +620,7 @@ h1 {
 .shop-item .visual {
   display: grid;
   place-items: center;
+  grid-row: 1 / 4;
   width: 48px;
   height: 48px;
   border-radius: 8px;
@@ -627,17 +630,21 @@ h1 {
 }
 
 .shop-item strong {
+  grid-column: 2;
   margin: 0 0 6px;
   font-size: 19px;
 }
 
 .shop-item p {
+  grid-column: 2;
   margin: 0;
   color: var(--muted);
   line-height: 1.5;
 }
 
 .shop-item button {
+  grid-column: 3;
+  grid-row: 1 / 4;
   min-width: 96px;
   min-height: 42px;
   border: 0;
@@ -771,10 +778,12 @@ h1 {
 @media (max-width: 560px) {
   .shop-item {
     grid-template-columns: 48px 1fr;
+    align-items: start;
   }
 
   .shop-item button {
     grid-column: 1 / -1;
+    grid-row: auto;
     width: 100%;
   }
 }
@@ -814,18 +823,20 @@ h1 {
 
 .bottom-nav {
   position: fixed;
-  left: 12px;
-  right: 12px;
-  bottom: max(10px, env(safe-area-inset-bottom));
+  left: 0;
+  right: 0;
+  bottom: 0;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
-  padding: 12px 20px;
+  padding: 12px 20px calc(12px + max(10px, env(safe-area-inset-bottom)));
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.94);
-  backdrop-filter: blur(14px);
-  box-shadow: 0 10px 30px rgba(12, 30, 52, 0.14);
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+  border-radius: 0;
+  background: #fff;
+  box-shadow: 0 -10px 30px rgba(12, 30, 52, 0.12);
   z-index: 20;
 }
 
@@ -979,7 +990,7 @@ h1 {
 
   .bottom-nav {
     gap: 4px;
-    padding: 9px 8px;
+    padding: 10px 14px calc(10px + max(10px, env(safe-area-inset-bottom)));
   }
 
   .nav-item {
