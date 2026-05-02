@@ -1,124 +1,29 @@
-import os
-import json
 import datetime
+import json
+import os
 from random import choices
 from string import ascii_uppercase, digits
 from typing import Optional
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, HTTPException
+import firebase_admin
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from firebase_admin import auth as firebase_auth
+from firebase_admin import credentials as firebase_credentials
+from firebase_admin import firestore as firebase_firestore
 from pydantic import BaseModel
-from sqlalchemy import Column, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import Session, sessionmaker
 
-try:
-    from google.auth.transport import requests as google_requests
-    from google.oauth2 import id_token as google_id_token
-except ImportError:
-    google_requests = None
-    google_id_token = None
-
-DB_USER = os.getenv("POSTGRES_USER", "nrc_user")
-DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "nrc_pass")
-DB_HOST = os.getenv("DB_HOST", "db")
-DB_NAME = os.getenv("POSTGRES_DB", "nrc_quiz_db")
-RENDER_DB_URL = os.getenv("DATABASE_URL")
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+FIREBASE_SERVICE_ACCOUNT_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "")
+FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
 ALLOW_UNVERIFIED_GOOGLE_LOGIN = os.getenv("ALLOW_UNVERIFIED_GOOGLE_LOGIN", "").lower() in ("1", "true", "yes")
-
-if RENDER_DB_URL:
-    if RENDER_DB_URL.startswith("postgres://"):
-        RENDER_DB_URL = RENDER_DB_URL.replace("postgres://", "postgresql://", 1)
-    engine = create_engine(RENDER_DB_URL)
-elif not os.getenv("DB_HOST"):
-    engine = create_engine("sqlite:///./nrc_quiz.db", connect_args={"check_same_thread": False})
-else:
-    engine = create_engine(f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:5432/{DB_NAME}")
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-
-
-class User(Base):
-    __tablename__ = "users"
-    user_id = Column(String, primary_key=True, index=True)
-    device_uuid = Column(String, unique=True, index=True, nullable=False)
-    nrc_id = Column(String, nullable=True)
-    auth_provider = Column(String, nullable=False, default="device")
-    google_sub = Column(String, unique=True, index=True, nullable=True)
-    email = Column(String, nullable=True)
-    nickname = Column(String, nullable=True)
-    total_points = Column(Integer, nullable=False, default=0)
-    created_at = Column(String, nullable=False)
-
-
-class Quiz(Base):
-    __tablename__ = "quizzes"
-    quiz_id = Column(Integer, primary_key=True, index=True)
-    question = Column(Text, nullable=False)
-    options_json = Column(Text, nullable=False)
-    correct_idx = Column(Integer, nullable=False)
-    category = Column(String, nullable=False)
-    level = Column(Integer, nullable=False)
-    explanation = Column(Text, nullable=False)
-
-
-class SolvedLog(Base):
-    __tablename__ = "solved_logs"
-    log_id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(String, ForeignKey("users.user_id"), nullable=False)
-    quiz_id = Column(Integer, ForeignKey("quizzes.quiz_id"), nullable=False)
-    solved_date = Column(String, nullable=False)
-    selected_idx = Column(Integer, nullable=False)
-    is_correct = Column(Integer, nullable=False)
-    earned_points = Column(Integer, nullable=False)
-    created_at = Column(String, nullable=False)
-    __table_args__ = (UniqueConstraint("user_id", "quiz_id", "solved_date", name="_user_quiz_date_uc"),)
-
-
-class PointLog(Base):
-    __tablename__ = "point_logs"
-    log_id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(String, ForeignKey("users.user_id"), nullable=False)
-    amount = Column(Integer, nullable=False)
-    reason = Column(String, nullable=False)
-    ref_id = Column(String, nullable=True)
-    created_at = Column(String, nullable=False)
-
-
-class RewardItem(Base):
-    __tablename__ = "reward_items"
-    item_id = Column(String, primary_key=True)
-    name = Column(String, nullable=False)
-    price_points = Column(Integer, nullable=False)
-
-
-class Coupon(Base):
-    __tablename__ = "coupons"
-    coupon_id = Column(String, primary_key=True)
-    user_id = Column(String, ForeignKey("users.user_id"), nullable=False)
-    item_id = Column(String, ForeignKey("reward_items.item_id"), nullable=False)
-    name = Column(String, nullable=False)
-    coupon_code = Column(String, unique=True, nullable=False)
-    status = Column(String, nullable=False)
-    issued_at = Column(String, nullable=False)
-
-
-class LockscreenSetting(Base):
-    __tablename__ = "lockscreen_settings"
-    user_id = Column(String, ForeignKey("users.user_id"), primary_key=True)
-    enabled = Column(Integer, nullable=False, default=1)
-    reward_prompt = Column(Integer, nullable=False, default=1)
-    updated_at = Column(String, nullable=False)
-
 
 QUIZZES = [
     (1, "다음 중 '혜택'이라는 뜻을 가진 단어는?", '["Benefit", "Battery", "Balance", "Banner"]', 0, "Life English", 1, "Benefit은 혜택이나 이익을 뜻합니다."),
     (2, "I would like to order some ____ at the cafe.", '["coffee", "coffees", "coffeed", "coffeeing"]', 0, "Sentence Completion", 2, "음료를 주문하는 문장에서는 some coffee가 자연스럽습니다."),
-    (3, "'예약을 확인하다'에 가장 가까운 표현은?", '["Confirm a reservation", "Cancel a station", "Carry a reason", "Change a season"]', 0, "Travel English", 3, "Confirm a reservation은 예약을 확인하다는 뜻입니다."),
+    (3, "'예약을 확인하다'와 가장 가까운 표현은?", '["Confirm a reservation", "Cancel a station", "Carry a reason", "Change a season"]', 0, "Travel English", 3, "Confirm a reservation은 예약을 확인하다는 뜻입니다."),
 ]
+
 REWARD_ITEMS = [
     ("voucher_5k", "5천원 금액권", 5000),
     ("voucher_10k", "1만원 금액권", 10000),
@@ -127,33 +32,21 @@ REWARD_ITEMS = [
 ]
 
 
-def init_db():
-    Base.metadata.create_all(bind=engine)
-    db = SessionLocal()
-    try:
-        for q in QUIZZES:
-            if not db.query(Quiz).filter(Quiz.quiz_id == q[0]).first():
-                db.add(Quiz(quiz_id=q[0], question=q[1], options_json=q[2], correct_idx=q[3], category=q[4], level=q[5], explanation=q[6]))
-        for r in REWARD_ITEMS:
-            if not db.query(RewardItem).filter(RewardItem.item_id == r[0]).first():
-                db.add(RewardItem(item_id=r[0], name=r[1], price_points=r[2]))
-        db.commit()
-    finally:
-        db.close()
+def init_firebase_admin():
+    if firebase_admin._apps:
+        return
+    if not FIREBASE_SERVICE_ACCOUNT_JSON:
+        raise RuntimeError("FIREBASE_SERVICE_ACCOUNT_JSON is required for the Firestore-only backend")
+    options = {"projectId": FIREBASE_PROJECT_ID} if FIREBASE_PROJECT_ID else None
+    service_account = json.loads(FIREBASE_SERVICE_ACCOUNT_JSON)
+    firebase_admin.initialize_app(firebase_credentials.Certificate(service_account), options)
 
 
-init_db()
+init_firebase_admin()
+firestore_db = firebase_firestore.client()
 
 app = FastAPI(title="NRC Quiz API", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 class DeviceLoginRequest(BaseModel):
@@ -184,55 +77,103 @@ class LockscreenSettingsSchema(BaseModel):
     reward_prompt: bool = True
 
 
+def now_iso() -> str:
+    return datetime.datetime.utcnow().isoformat()
+
+
 def make_coupon_code() -> str:
     token = "".join(choices(ascii_uppercase + digits, k=8))
     return f"NRCQ-{token[:4]}-{token[4:]}"
 
 
-def verify_google_sso_token(raw_token: str) -> dict:
-    if not GOOGLE_CLIENT_ID:
-        raise HTTPException(status_code=500, detail="GOOGLE_CLIENT_ID is not configured")
-    if not google_id_token or not google_requests:
-        raise HTTPException(status_code=500, detail="google-auth dependency is not installed")
+def verify_firebase_id_token(raw_token: str) -> dict:
     try:
-        claims = google_id_token.verify_oauth2_token(raw_token, google_requests.Request(), GOOGLE_CLIENT_ID)
-    except ValueError:
-        raise HTTPException(status_code=401, detail="invalid google id token")
-    if claims.get("iss") not in ("accounts.google.com", "https://accounts.google.com"):
-        raise HTTPException(status_code=401, detail="invalid google issuer")
-    if not claims.get("sub"):
-        raise HTTPException(status_code=401, detail="google subject missing")
+        claims = firebase_auth.verify_id_token(raw_token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="invalid firebase id token")
+    if not claims.get("uid"):
+        raise HTTPException(status_code=401, detail="firebase uid missing")
     return claims
+
+
+def quiz_row_to_response(q):
+    return {"quiz_id": q[0], "question": q[1], "options": json.loads(q[2]), "category": q[4], "level": q[5]}
+
+
+def quiz_by_id(quiz_id: int):
+    return next((q for q in QUIZZES if q[0] == quiz_id), None)
+
+
+def reward_row_to_response(r):
+    return {"item_id": r[0], "name": r[1], "price_points": r[2]}
+
+
+def reward_by_id(item_id: str):
+    return next((r for r in REWARD_ITEMS if r[0] == item_id), None)
+
+
+def user_ref(user_id: str):
+    return firestore_db.collection("users").document(user_id)
+
+
+def find_one(collection: str, field: str, value):
+    docs = firestore_db.collection(collection).where(field, "==", value).limit(1).stream()
+    for doc in docs:
+        data = doc.to_dict()
+        data["_doc_id"] = doc.id
+        return data
+    return None
+
+
+def create_user(device_uuid: str, auth_provider: str = "device", google_sub: Optional[str] = None, email: Optional[str] = None, nickname: Optional[str] = None, nrc_id: Optional[str] = None):
+    user_id = str(uuid4())
+    now = now_iso()
+    user = {
+        "user_id": user_id,
+        "device_uuid": device_uuid,
+        "nrc_id": nrc_id,
+        "auth_provider": auth_provider,
+        "google_sub": google_sub,
+        "email": email,
+        "nickname": nickname,
+        "total_points": 1250,
+        "created_at": now,
+    }
+    user_ref(user_id).set(user)
+    firestore_db.collection("point_logs").add({"user_id": user_id, "amount": 1250, "reason": "signup_bonus", "created_at": now})
+    firestore_db.collection("lockscreen_settings").document(user_id).set({"user_id": user_id, "enabled": True, "reward_prompt": True, "updated_at": now})
+    return user
+
+
+def auth_response(user):
+    return {
+        "access_token": f"dev-token-{user['user_id']}",
+        "user_id": user["user_id"],
+        "nickname": user.get("nickname"),
+        "total_points": user.get("total_points", 0),
+    }
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "time": datetime.datetime.utcnow().isoformat()}
+    return {"status": "ok", "time": now_iso(), "database": "firestore", "project_id": FIREBASE_PROJECT_ID}
 
 
 @app.get("/")
 def root():
-    return {"service": "NRC Quiz API", "status": "ok", "health": "/health"}
+    return {"service": "NRC Quiz API", "status": "ok", "database": "firestore", "health": "/health"}
 
 
 @app.post("/v1/auth/device-login")
-def device_login(payload: DeviceLoginRequest, db: Session = Depends(get_db)):
-    now = datetime.datetime.utcnow().isoformat()
-    user = db.query(User).filter(User.device_uuid == payload.device_uuid).first()
+def device_login(payload: DeviceLoginRequest):
+    user = find_one("users", "device_uuid", payload.device_uuid)
     if not user:
-        user_id = str(uuid4())
-        user = User(user_id=user_id, device_uuid=payload.device_uuid, nrc_id=payload.nrc_id, total_points=1250, created_at=now)
-        db.add(user)
-        db.add(PointLog(user_id=user_id, amount=1250, reason="signup_bonus", created_at=now))
-        db.add(LockscreenSetting(user_id=user_id, enabled=1, reward_prompt=1, updated_at=now))
-        db.commit()
-        db.refresh(user)
-    return {"access_token": f"dev-token-{user.user_id}", "user_id": user.user_id, "total_points": user.total_points}
+        user = create_user(device_uuid=payload.device_uuid, nrc_id=payload.nrc_id)
+    return {"access_token": f"dev-token-{user['user_id']}", "user_id": user["user_id"], "total_points": user.get("total_points", 0)}
 
 
 @app.post("/v1/auth/google-login")
-def google_login(payload: GoogleLoginRequest, db: Session = Depends(get_db)):
-    now = datetime.datetime.utcnow().isoformat()
+def google_login(payload: GoogleLoginRequest):
     nickname = payload.nickname.strip()
     if not nickname:
         raise HTTPException(status_code=400, detail="nickname required")
@@ -240,114 +181,121 @@ def google_login(payload: GoogleLoginRequest, db: Session = Depends(get_db)):
     google_sub = payload.google_sub
     email = payload.email
     if payload.id_token:
-        claims = verify_google_sso_token(payload.id_token)
-        google_sub = claims["sub"]
+        claims = verify_firebase_id_token(payload.id_token)
+        google_sub = claims["uid"]
         email = claims.get("email") or email
-    elif GOOGLE_CLIENT_ID and not ALLOW_UNVERIFIED_GOOGLE_LOGIN:
-        raise HTTPException(status_code=401, detail="google id token required")
+    elif not ALLOW_UNVERIFIED_GOOGLE_LOGIN:
+        raise HTTPException(status_code=401, detail="firebase id token required")
     if not google_sub:
         raise HTTPException(status_code=400, detail="google_sub required")
 
-    user = db.query(User).filter(User.google_sub == google_sub).first()
+    user = find_one("users", "google_sub", google_sub)
     if not user:
-        user_id = str(uuid4())
-        user = User(user_id=user_id, device_uuid=f"google:{google_sub}", auth_provider="google", google_sub=google_sub, email=email, nickname=nickname, total_points=1250, created_at=now)
-        db.add(user)
-        db.add(PointLog(user_id=user_id, amount=1250, reason="signup_bonus", created_at=now))
-        db.add(LockscreenSetting(user_id=user_id, enabled=1, reward_prompt=1, updated_at=now))
-        db.commit()
-        db.refresh(user)
+        user = create_user(device_uuid=f"google:{google_sub}", auth_provider="google", google_sub=google_sub, email=email, nickname=nickname)
     else:
-        user.email = email
-        user.nickname = nickname
-        db.commit()
-        db.refresh(user)
-    return {"access_token": f"dev-token-{user.user_id}", "user_id": user.user_id, "nickname": user.nickname, "total_points": user.total_points}
+        user["email"] = email
+        user["nickname"] = nickname
+        user_ref(user["user_id"]).update({"email": email, "nickname": nickname})
+    return auth_response(user)
 
 
 @app.get("/v1/quizzes/daily")
-def daily_quizzes(db: Session = Depends(get_db)):
-    quizzes = db.query(Quiz).order_by(Quiz.quiz_id).limit(10).all()
-    return [{"quiz_id": q.quiz_id, "question": q.question, "options": json.loads(q.options_json), "category": q.category, "level": q.level} for q in quizzes]
+def daily_quizzes():
+    return [quiz_row_to_response(q) for q in QUIZZES[:10]]
 
 
 @app.post("/v1/quizzes/verify")
-def verify_quiz(payload: QuizVerifyRequest, db: Session = Depends(get_db)):
+def verify_quiz(payload: QuizVerifyRequest):
     today = datetime.date.today().isoformat()
-    now = datetime.datetime.utcnow().isoformat()
-    user = db.query(User).filter(User.user_id == payload.user_id).first()
-    if not user:
+    now = now_iso()
+    user_doc = user_ref(payload.user_id).get()
+    if not user_doc.exists:
         raise HTTPException(status_code=404, detail="user not found")
-    solved_count = db.query(SolvedLog).filter(SolvedLog.user_id == payload.user_id, SolvedLog.solved_date == today).count()
+
+    solved_count = sum(1 for _ in firestore_db.collection("solved_logs").where("user_id", "==", payload.user_id).where("solved_date", "==", today).stream())
     if solved_count >= 10:
         raise HTTPException(status_code=403, detail="daily quiz already completed")
-    quiz = db.query(Quiz).filter(Quiz.quiz_id == payload.quiz_id).first()
+
+    quiz = quiz_by_id(payload.quiz_id)
     if not quiz:
         raise HTTPException(status_code=404, detail="quiz not found")
-    already = db.query(SolvedLog).filter(SolvedLog.user_id == payload.user_id, SolvedLog.quiz_id == payload.quiz_id, SolvedLog.solved_date == today).first()
-    if already:
+
+    solved_id = f"{payload.user_id}_{payload.quiz_id}_{today}"
+    if firestore_db.collection("solved_logs").document(solved_id).get().exists:
         raise HTTPException(status_code=403, detail="quiz already solved")
-    is_correct = payload.selected_idx == quiz.correct_idx
-    earned = 10 + (quiz.level - 1) * 3 if is_correct else 2
-    user.total_points += earned
-    db.add(SolvedLog(user_id=payload.user_id, quiz_id=payload.quiz_id, solved_date=today, selected_idx=payload.selected_idx, is_correct=int(is_correct), earned_points=earned, created_at=now))
-    db.add(PointLog(user_id=payload.user_id, amount=earned, reason="quiz", ref_id=str(payload.quiz_id), created_at=now))
-    db.commit()
-    return {"is_correct": is_correct, "correct_idx": quiz.correct_idx, "earned_points": earned, "current_total_points": user.total_points, "daily_solved": solved_count + 1, "daily_completed": (solved_count + 1) >= 10, "explanation": quiz.explanation}
+
+    user = user_doc.to_dict()
+    is_correct = payload.selected_idx == quiz[3]
+    earned = 10 + (quiz[5] - 1) * 3 if is_correct else 2
+    total_points = int(user.get("total_points", 0)) + earned
+    user_ref(payload.user_id).update({"total_points": total_points})
+    firestore_db.collection("solved_logs").document(solved_id).set({
+        "user_id": payload.user_id,
+        "quiz_id": payload.quiz_id,
+        "solved_date": today,
+        "selected_idx": payload.selected_idx,
+        "is_correct": is_correct,
+        "earned_points": earned,
+        "created_at": now,
+    })
+    firestore_db.collection("point_logs").add({"user_id": payload.user_id, "amount": earned, "reason": "quiz", "ref_id": str(payload.quiz_id), "created_at": now})
+    return {"is_correct": is_correct, "correct_idx": quiz[3], "earned_points": earned, "current_total_points": total_points, "daily_solved": solved_count + 1, "daily_completed": (solved_count + 1) >= 10, "explanation": quiz[6]}
 
 
 @app.get("/v1/rewards/items")
-def reward_items(db: Session = Depends(get_db)):
-    items = db.query(RewardItem).order_by(RewardItem.price_points).all()
-    return [{"item_id": i.item_id, "name": i.name, "price_points": i.price_points} for i in items]
+def reward_items():
+    return [reward_row_to_response(r) for r in REWARD_ITEMS]
 
 
 @app.post("/v1/rewards/exchange")
-def exchange_reward(payload: RewardExchangeRequest, db: Session = Depends(get_db)):
-    now = datetime.datetime.utcnow().isoformat()
-    user = db.query(User).filter(User.user_id == payload.user_id).first()
-    if not user:
+def exchange_reward(payload: RewardExchangeRequest):
+    now = now_iso()
+    user_doc = user_ref(payload.user_id).get()
+    if not user_doc.exists:
         raise HTTPException(status_code=404, detail="user not found")
-    item = db.query(RewardItem).filter(RewardItem.item_id == payload.item_id).first()
+
+    user = user_doc.to_dict()
+    item = reward_by_id(payload.item_id)
     if not item:
         raise HTTPException(status_code=404, detail="item not found")
-    if user.total_points < item.price_points:
+    if int(user.get("total_points", 0)) < item[2]:
         raise HTTPException(status_code=400, detail="not enough points")
+
     coupon_id = str(uuid4())
     coupon_code = make_coupon_code()
-    user.total_points -= item.price_points
-    coupon = Coupon(coupon_id=coupon_id, user_id=payload.user_id, item_id=item.item_id, name=item.name, coupon_code=coupon_code, status="사용 가능", issued_at=datetime.date.today().isoformat())
-    db.add(coupon)
-    db.add(PointLog(user_id=payload.user_id, amount=-item.price_points, reason="reward_exchange", ref_id=coupon_id, created_at=now))
-    db.commit()
-    return {"coupon": {"coupon_id": coupon_id, "name": item.name, "coupon_code": coupon_code, "status": "사용 가능", "issued_at": datetime.date.today().isoformat()}, "remaining_points": user.total_points}
+    remaining = int(user.get("total_points", 0)) - item[2]
+    coupon = {"coupon_id": coupon_id, "user_id": payload.user_id, "item_id": item[0], "name": item[1], "coupon_code": coupon_code, "status": "사용 가능", "issued_at": datetime.date.today().isoformat()}
+    user_ref(payload.user_id).update({"total_points": remaining})
+    firestore_db.collection("coupons").document(coupon_id).set(coupon)
+    firestore_db.collection("point_logs").add({"user_id": payload.user_id, "amount": -item[2], "reason": "reward_exchange", "ref_id": coupon_id, "created_at": now})
+    return {"coupon": {k: coupon[k] for k in ("coupon_id", "name", "coupon_code", "status", "issued_at")}, "remaining_points": remaining}
 
 
 @app.get("/v1/coupons")
-def get_coupons(user_id: str, db: Session = Depends(get_db)):
-    coupons = db.query(Coupon).filter(Coupon.user_id == user_id).order_by(Coupon.issued_at.desc()).all()
-    return [{"coupon_id": c.coupon_id, "name": c.name, "coupon_code": c.coupon_code, "status": c.status, "issued_at": c.issued_at} for c in coupons]
+def get_coupons(user_id: str):
+    docs = firestore_db.collection("coupons").where("user_id", "==", user_id).stream()
+    coupons = [doc.to_dict() for doc in docs]
+    coupons.sort(key=lambda c: c.get("issued_at", ""), reverse=True)
+    return [{"coupon_id": c["coupon_id"], "name": c["name"], "coupon_code": c["coupon_code"], "status": c["status"], "issued_at": c["issued_at"]} for c in coupons]
 
 
 @app.get("/v1/settings/lockscreen")
-def get_lockscreen(user_id: str, db: Session = Depends(get_db)):
-    setting = db.query(LockscreenSetting).filter(LockscreenSetting.user_id == user_id).first()
-    if not setting:
+def get_lockscreen(user_id: str):
+    setting = firestore_db.collection("lockscreen_settings").document(user_id).get()
+    if not setting.exists:
         return LockscreenSettingsSchema()
-    return LockscreenSettingsSchema(enabled=bool(setting.enabled), reward_prompt=bool(setting.reward_prompt))
+    data = setting.to_dict()
+    return LockscreenSettingsSchema(enabled=bool(data.get("enabled", True)), reward_prompt=bool(data.get("reward_prompt", True)))
 
 
 @app.put("/v1/settings/lockscreen")
-def update_lockscreen(user_id: str, settings: LockscreenSettingsSchema, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.user_id == user_id).first()
-    if not user:
+def update_lockscreen(user_id: str, settings: LockscreenSettingsSchema):
+    if not user_ref(user_id).get().exists:
         raise HTTPException(status_code=404, detail="user not found")
-    setting = db.query(LockscreenSetting).filter(LockscreenSetting.user_id == user_id).first()
-    if setting:
-        setting.enabled = int(settings.enabled)
-        setting.reward_prompt = int(settings.reward_prompt)
-        setting.updated_at = datetime.datetime.utcnow().isoformat()
-    else:
-        db.add(LockscreenSetting(user_id=user_id, enabled=int(settings.enabled), reward_prompt=int(settings.reward_prompt), updated_at=datetime.datetime.utcnow().isoformat()))
-    db.commit()
+    firestore_db.collection("lockscreen_settings").document(user_id).set({
+        "user_id": user_id,
+        "enabled": settings.enabled,
+        "reward_prompt": settings.reward_prompt,
+        "updated_at": now_iso(),
+    }, merge=True)
     return settings

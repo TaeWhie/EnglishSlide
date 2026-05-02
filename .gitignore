@@ -1,0 +1,15 @@
+# Local IDE and Android build output
+.idea/
+.vscode/
+android-app/.gradle/
+android-app/build/
+android-app/app/build/
+android-app/local.properties
+
+# Python
+__pycache__/
+*.pyc
+nrc_quiz.db
+
+# Local release artifacts
+*.apk

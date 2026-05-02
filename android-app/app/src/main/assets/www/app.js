@@ -204,6 +204,36 @@ function completeGoogleStep(googleUser) {
   $("#loginName").focus();
 }
 
+function normalizeNativeGooglePayload(payload) {
+  if (!payload) return null;
+  if (typeof payload === "string") {
+    try {
+      return JSON.parse(payload);
+    } catch {
+      return null;
+    }
+  }
+  return payload;
+}
+
+window.onNativeGoogleSignIn = (payload) => {
+  const googleUser = normalizeNativeGooglePayload(payload);
+  if (!googleUser || googleUser.status === "pending") return;
+  if (googleUser.status === "unconfigured") {
+    showToast(googleUser.message || "Google Client ID is not configured.");
+    return;
+  }
+  if (!googleUser.googleSub && !googleUser.idToken && !googleUser.id_token) {
+    showToast("Google 로그인 정보를 확인하지 못했습니다.");
+    return;
+  }
+  completeGoogleStep(googleUser);
+};
+
+window.onNativeGoogleSignInError = (message) => {
+  showToast(message || "Google 로그인에 실패했습니다.");
+};
+
 function updateProfileStats() {
   const quizState = $("#profileQuizState");
   const couponCount = $("#profileCouponCount");
@@ -496,7 +526,7 @@ function bindEvents() {
   $("#googleLoginButton").addEventListener("click", () => {
     if (window.NRCBridge?.googleSignIn) {
       try {
-        completeGoogleStep(JSON.parse(window.NRCBridge.googleSignIn()));
+        window.onNativeGoogleSignIn(window.NRCBridge.googleSignIn());
       } catch {
         showToast("Google 로그인 정보를 확인하지 못했습니다.");
       }

@@ -149,6 +149,7 @@ button {
 .app-shell {
   display: block;
   min-height: 100vh;
+  padding-bottom: calc(86px + max(14px, env(safe-area-inset-bottom)));
 }
 
 .eyebrow {
@@ -813,16 +814,19 @@ h1 {
 
 .bottom-nav {
   position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  left: 12px;
+  right: 12px;
+  bottom: max(10px, env(safe-area-inset-bottom));
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
   padding: 12px 20px;
-  border-top: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(14px);
+  box-shadow: 0 10px 30px rgba(12, 30, 52, 0.14);
+  z-index: 20;
 }
 
 .nav-item {
