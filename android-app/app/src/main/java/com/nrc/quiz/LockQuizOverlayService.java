@@ -115,12 +115,14 @@ public class LockQuizOverlayService extends Service {
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0
         );
 
-        String title = "오늘의 단어";
-        String content = "잠금화면 퀴즈가 활성화되어 있습니다.";
+        String title = "잠금화면 퀴즈 작동 중";
+        String content = "오늘의 단어를 학습해보세요.";
+        String bigText = "잠금화면을 켤 때마다 새로운 단어가 나타납니다.";
         
         if (currentNotificationWord != null) {
-            title = currentNotificationWord.word + " [" + currentNotificationWord.part + "]";
+            title = currentNotificationWord.word + " (" + currentNotificationWord.part + ")";
             content = currentNotificationWord.korean;
+            bigText = "뜻: " + currentNotificationWord.korean + "\n예문: " + currentNotificationWord.english;
         }
 
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
@@ -128,12 +130,16 @@ public class LockQuizOverlayService extends Service {
                 : new Notification.Builder(this);
         
         return builder
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                 .setContentTitle(title)
                 .setContentText(content)
-                .setSubText("NRC Quiz 학습 중")
+                .setStyle(new Notification.BigTextStyle().bigText(bigText))
+                .setSubText("NRC Quiz 학습 도우미")
                 .setContentIntent(pendingIntent)
                 .setOngoing(true)
+                .setAutoCancel(false)
+                .setOnlyAlertOnce(true)
+                .setColor(0xFF4285F4) // Google Blue
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setPriority(Notification.PRIORITY_LOW)
                 .build();

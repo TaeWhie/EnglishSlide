@@ -354,6 +354,55 @@ function routeFromHash() {
   };
   return viewMap[location.hash.slice(1)] || "homeView";
 }
+  startButton.classList.remove("disabled");
+}
+
+function showToast(message) {
+  const toast = $("#toast");
+  toast.textContent = message;
+  toast.classList.remove("hidden");
+  clearTimeout(showToast.timeout);
+  showToast.timeout = setTimeout(() => toast.classList.add("hidden"), 2600);
+}
+
+function switchView(viewId) {
+  $$(".view").forEach((view) => view.classList.toggle("active", view.id === viewId));
+  $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === viewId));
+  if (viewId === "quizView") {
+    renderQuiz();
+  } else if (viewId === "reportView") {
+    renderCoupons();
+    renderLockscreenSettings();
+    clearInterval(state.timerId);
+    state.locked = false;
+  } else {
+    clearInterval(state.timerId);
+    state.locked = false;
+  }
+}
+
+function syncRoute(viewId) {
+  const routeMap = {
+    homeView: "home",
+    quizView: "quiz",
+    shopView: "shop",
+    reportView: "profile"
+  };
+  const nextHash = routeMap[viewId] || "home";
+  if (location.hash.slice(1) !== nextHash) {
+    history.replaceState(null, "", `#${nextHash}`);
+  }
+}
+
+function routeFromHash() {
+  const viewMap = {
+    home: "homeView",
+    quiz: "quizView",
+    shop: "shopView",
+    profile: "reportView"
+  };
+  return viewMap[location.hash.slice(1)] || "homeView";
+}
 
 function startTimer() {
   clearInterval(state.timerId);
@@ -400,7 +449,14 @@ async function renderQuiz() {
     }
   }
 
+  if (state.quizzes.length === 0) {
+    showToast("진행할 수 있는 퀴즈가 없습니다.");
+    return;
+  }
+
   const quiz = state.quizzes[state.current % state.quizzes.length];
+  if (!quiz) return;
+
   $("#quizHead").classList.remove("hidden");
   $("#quizProgressWrap").classList.remove("hidden");
   $("#quizCategory").textContent = `${quiz.category} · Level ${quiz.level}`;
@@ -408,7 +464,7 @@ async function renderQuiz() {
   $("#quizComplete").classList.add("hidden");
   $("#reviewPanel").classList.add("hidden");
   $("#quizFeedback").classList.add("hidden");
-  $("#optionList").innerHTML = quiz.options
+  $("#optionList").innerHTML = (quiz.options || [])
     .map((option, index) => `<button class="option-button" type="button" data-index="${index}">${String.fromCharCode(65 + index)}. ${option}</button>`)
     .join("");
   $$(".option-button").forEach((button) => {
@@ -419,19 +475,26 @@ async function renderQuiz() {
 
 async function verifyAnswer(selectedIndex) {
   if (state.locked) return;
+  if (!state.quizzes.length) return;
+  
   state.locked = true;
   clearInterval(state.timerId);
   $$(".option-button").forEach((button) => button.disabled = true);
 
   const quiz = state.quizzes[state.current % state.quizzes.length];
-  const selectedAnswer = selectedIndex >= 0 ? quiz.options[selectedIndex] : "시간 초과";
+  if (!quiz) {
+    state.locked = false;
+    return;
+  }
+
+  const selectedAnswer = selectedIndex >= 0 ? (quiz.options ? quiz.options[selectedIndex] : "알 수 없음") : "시간 초과";
   
   try {
     const res = await withLoading(
       "채점 중",
-      "정답과 포인트를 확인하고 있습니다.",
+      "정답 여부를 확인하고 있습니다.",
       () => apiCall('/quizzes/verify', 'POST', {
-        user_id: state.user.user_id,
+        user_id: state.user?.user_id || "",
         quiz_id: quiz.quiz_id,
         selected_idx: selectedIndex
       })
@@ -448,14 +511,14 @@ async function verifyAnswer(selectedIndex) {
         quizIndex: state.current,
         question: quiz.question,
         selected: selectedAnswer,
-        correct: quiz.options[res.correct_idx],
+        correct: quiz.options ? quiz.options[res.correct_idx] : "",
         isCorrect,
         explanation: res.explanation,
         category: quiz.category
       });
     }
 
-    $(".option-button").forEach((button) => {
+    $$(".option-button").forEach((button) => {
       const index = Number(button.dataset.index);
       if (index === res.correct_idx) button.classList.add("correct");
       if (index === selectedIndex && !isCorrect) button.classList.add("wrong");
@@ -480,7 +543,9 @@ async function verifyAnswer(selectedIndex) {
 }
 
 function nextQuiz() {
-  state.current = (state.current + 1) % state.quizzes.length;
+  if (state.quizzes.length > 0) {
+    state.current = (state.current + 1) % state.quizzes.length;
+  }
   state.locked = false;
   renderQuiz();
 }
