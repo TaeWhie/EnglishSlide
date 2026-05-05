@@ -11,6 +11,7 @@ const savedProfile = JSON.parse(localStorage.getItem("nrc_user_profile") || "nul
 let pendingGoogleUser = null;
 
 const state = {
+  quizMode: 'kor',
   user: savedProfile,
   points: savedProfile ? savedProfile.total_points || 0 : 0,
   coupons: [],
@@ -441,7 +442,7 @@ async function renderQuiz() {
       state.quizzes = await withLoading(
         "퀴즈 로딩 중",
         "오늘의 문제를 불러오고 있습니다.",
-        () => apiCall('/quizzes/daily')
+        () => apiCall(`/quizzes/daily?mode=${state.quizMode}`)
       );
     } catch (e) {
       showToast("퀴즈를 불러오지 못했습니다.");
@@ -551,6 +552,7 @@ function nextQuiz() {
 }
 
 function startNextSet() {
+  state.quizzes = []; // 새 세트를 위해 초기화
   state.completed = false;
   state.answers = [];
   state.current = 0;

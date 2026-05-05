@@ -308,26 +308,9 @@ def google_login(payload: GoogleLoginRequest):
 
 
 @app.get("/v1/quizzes/daily")
-def daily_quizzes():
+def daily_quizzes(mode: str = "kor"):
     today = datetime.date.today().isoformat()
-    unit = unit_for_date(today)
-    unit_words = words_for_unit(unit)
-    if len(unit_words) < 5: # 최소 필요 단어 수
-        raise HTTPException(status_code=500, detail="not enough words for daily unit")
-    
-    rng = random.Random(f"{today}:mixed:unit:{unit}")
-    # 5개의 단어를 뽑아서 각각 영한/영영 두 버전씩 총 10문제를 만듦
-    # 또는 10개의 단어를 뽑아서 5개는 영한, 5개는 영영으로 만듦
-    picked = rng.sample(unit_words, min(10, len(unit_words)))
-    
-    quizzes = []
-    for i, word in enumerate(picked):
-        # 0-4번은 영한(kor), 5-9번은 영영(eng)
-        mode = "kor" if i < 5 else "eng"
-        quizzes.append(public_quiz(build_word_quiz(word, mode, today)))
-        
-    rng.shuffle(quizzes)
-    return quizzes
+    return [public_quiz(quiz) for quiz in daily_word_quizzes(mode, today)]
 
 
 @app.post("/v1/quizzes/verify")
