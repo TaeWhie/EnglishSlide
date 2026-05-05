@@ -99,11 +99,12 @@ function showApp() { $("#loginView").classList.add("hidden"); $("#mainView").cla
 function switchView(viewId) {
   $$(".view").forEach((view) => view.classList.toggle("active", view.id === viewId));
   $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === viewId));
+  
   if (viewId === "quizView") {
-    // 퀴즈 탭 진입 시 혹시라도 quizzes가 남아있다면 초기화 (안전장치)
-    if (!state.quizModeSelected) {
-       // state.quizzes = []; // 이 부분은 nav click에서 이미 처리함
-    }
+    // 탭을 눌러 퀴즈로 올 때마다 초기화하도록 강제
+    state.quizzes = [];
+    clearInterval(state.timerId);
+    state.locked = false;
     renderQuiz();
   } else if (viewId === "reportView") {
     renderCoupons();
