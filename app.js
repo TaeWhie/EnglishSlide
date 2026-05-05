@@ -491,15 +491,27 @@ async function verifyAnswer(selectedIndex) {
   const selectedAnswer = selectedIndex >= 0 ? (quiz.options ? quiz.options[selectedIndex] : "알 수 없음") : "시간 초과";
   
   try {
-    const res = await withLoading(
-      "채점 중",
-      "정답 여부를 확인하고 있습니다.",
-      () => apiCall('/quizzes/verify', 'POST', {
-        user_id: state.user?.user_id || "",
-        quiz_id: quiz.quiz_id,
-        selected_idx: selectedIndex
-      })
-    );
+    let res;
+    if (state.quizMode === 'incorrect') {
+      res = {
+        is_correct: selectedIndex === quiz._correct_idx,
+        correct_idx: quiz._correct_idx,
+        explanation: quiz.explanation || "",
+        current_total_points: state.points,
+        daily_solved: state.solved,
+        daily_completed: false
+      };
+    } else {
+      res = await withLoading(
+        "채점 중",
+        "정답 여부를 확인하고 있습니다.",
+        () => apiCall('/quizzes/verify', 'POST', {
+          user_id: state.user?.user_id || "",
+          quiz_id: quiz.quiz_id,
+          selected_idx: selectedIndex
+        })
+      );
+    }
 
     const isCorrect = res.is_correct;
     state.points = res.current_total_points;
