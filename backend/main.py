@@ -1,4 +1,4 @@
-import datetime
+﻿import datetime
 import random
 import json
 import os
@@ -22,16 +22,16 @@ WORDS_PATH = os.path.join(os.path.dirname(__file__), "data", "words.json")
 DAILY_QUIZ_REWARD_MAX_POINTS = 1000
 
 QUIZZES = [
-    (1, "다음 중 '혜택'이라는 뜻을 가진 단어는?", '["Benefit", "Battery", "Balance", "Banner"]', 0, "Life English", 1, "Benefit은 혜택이나 이익을 뜻합니다."),
-    (2, "I would like to order some ____ at the cafe.", '["coffee", "coffees", "coffeed", "coffeeing"]', 0, "Sentence Completion", 2, "음료를 주문하는 문장에서는 some coffee가 자연스럽습니다."),
-    (3, "'예약을 확인하다'와 가장 가까운 표현은?", '["Confirm a reservation", "Cancel a station", "Carry a reason", "Change a season"]', 0, "Travel English", 3, "Confirm a reservation은 예약을 확인하다는 뜻입니다."),
+    (1, "?ㅼ쓬 以?'?쒗깮'?대씪???살쓣 媛吏??⑥뼱??", '["Benefit", "Battery", "Balance", "Banner"]', 0, "Life English", 1, "Benefit? ?쒗깮?대굹 ?댁씡???삵빀?덈떎."),
+    (2, "I would like to order some ____ at the cafe.", '["coffee", "coffees", "coffeed", "coffeeing"]', 0, "Sentence Completion", 2, "?뚮즺瑜?二쇰Ц?섎뒗 臾몄옣?먯꽌??some coffee媛 ?먯뿰?ㅻ읇?듬땲??"),
+    (3, "'?덉빟???뺤씤?섎떎'? 媛??媛源뚯슫 ?쒗쁽??", '["Confirm a reservation", "Cancel a station", "Carry a reason", "Change a season"]', 0, "Travel English", 3, "Confirm a reservation? ?덉빟???뺤씤?섎떎???살엯?덈떎."),
 ]
 
 REWARD_ITEMS = [
-    ("voucher_5k", "5천원 금액권", 5000),
-    ("voucher_10k", "1만원 금액권", 10000),
-    ("voucher_30k", "3만원 금액권", 30000),
-    ("voucher_50k", "5만원 금액권", 50000),
+    ("voucher_5k", "5泥쒖썝 湲덉븸沅?, 5000),
+    ("voucher_10k", "1留뚯썝 湲덉븸沅?, 10000),
+    ("voucher_30k", "3留뚯썝 湲덉븸沅?, 30000),
+    ("voucher_50k", "5留뚯썝 湲덉븸沅?, 50000),
 ]
 
 
@@ -132,7 +132,7 @@ def words_for_unit(unit: int):
 
 
 def quiz_mode_label(mode: str) -> str:
-    return "영영 퀴즈" if mode == "eng" else "영한 퀴즈"
+    return "?곸쁺 ?댁쫰" if mode == "eng" else "?곹븳 ?댁쫰"
 
 
 def answer_text(word: dict, mode: str) -> str:
@@ -350,10 +350,10 @@ def verify_quiz(payload: QuizVerifyRequest):
 
     is_correct = payload.selected_idx == quiz["_correct_idx"]
     
-    # 더 이상 개별 문항마다 포인트를 지급하지 않음 (10개 묶음 보상으로 변경)
+    # ???댁긽 媛쒕퀎 臾명빆留덈떎 ?ъ씤?몃? 吏湲됲븯吏 ?딆쓬 (10媛?臾띠쓬 蹂댁긽?쇰줈 蹂寃?
     earned_points = 0
     
-    # 중복 풀이를 허용하기 위해 고유한 ID(UUID) 사용
+    # 以묐났 ??대? ?덉슜?섍린 ?꾪빐 怨좎쑀??ID(UUID) ?ъ슜
     solved_id = f"{payload.user_id}_{payload.quiz_id}_{today}_{uuid4().hex[:8]}"
     firestore_db.collection("solved_logs").document(solved_id).set({
         "user_id": payload.user_id,
@@ -369,7 +369,7 @@ def verify_quiz(payload: QuizVerifyRequest):
     })
     
     total_points = int(user_doc.to_dict().get("total_points", 0))
-    # 전체 푼 횟수 확인 (10개 단위 완료 체크용)
+    # ?꾩껜 ???잛닔 ?뺤씤 (10媛??⑥쐞 ?꾨즺 泥댄겕??
     solved_count = sum(1 for _ in firestore_db.collection("solved_logs").where("user_id", "==", payload.user_id).where("solved_date", "==", today).stream())
     
     return {
@@ -393,7 +393,7 @@ def claim_quiz_reward(payload: QuizRewardRequest):
     if not user_doc.exists:
         raise HTTPException(status_code=404, detail="user not found")
 
-    # 오늘 이미 받은 누적 보상 확인
+    # ?ㅻ뒛 ?대? 諛쏆? ?꾩쟻 蹂댁긽 ?뺤씤
     existing_rewards = firestore_db.collection("point_logs") \
         .where("user_id", "==", payload.user_id) \
         .where("reason", "==", "daily_quiz_reward") \
@@ -401,7 +401,7 @@ def claim_quiz_reward(payload: QuizRewardRequest):
         .stream()
     total_earned_today = sum(int(doc.to_dict().get("amount", 0)) for doc in existing_rewards)
 
-    # 최근 10개 풀이 기록을 기반으로 보상 계산
+    # 理쒓렐 10媛????湲곕줉??湲곕컲?쇰줈 蹂댁긽 怨꾩궛
     solved_logs = [
         doc.to_dict()
         for doc in firestore_db.collection("solved_logs")
@@ -418,10 +418,10 @@ def claim_quiz_reward(payload: QuizRewardRequest):
     correct_count = sum(1 for log in solved_logs if log.get("is_correct"))
     reward_percent = min(100, max(0, correct_count * 10))
     
-    # 10문제 세트당 기본 보상 (최대 100P 중 정답률 반영)
+    # 10臾몄젣 ?명듃??湲곕낯 蹂댁긽 (理쒕? 100P 以??뺣떟瑜?諛섏쁺)
     potential_reward = int(DAILY_QUIZ_REWARD_MAX_POINTS * reward_percent / 100)
     
-    # 일일 총합 100P 한도 적용
+    # ?쇱씪 珥앺빀 100P ?쒕룄 ?곸슜
     remaining_cap = max(0, 100 - total_earned_today)
     reward_points = min(potential_reward, remaining_cap)
 
@@ -429,7 +429,7 @@ def claim_quiz_reward(payload: QuizRewardRequest):
     total_points = current_points + reward_points
     user_ref(payload.user_id).update({"total_points": total_points})
 
-    # 무제한 반복 가능하도록 고유 ID로 저장 (ref_id는 날짜 유지하여 한도 체크에 사용)
+    # 臾댁젣??諛섎났 媛?ν븯?꾨줉 怨좎쑀 ID濡????(ref_id???좎쭨 ?좎??섏뿬 ?쒕룄 泥댄겕???ъ슜)
     reward_id = f"{payload.user_id}_{today}_reward_{uuid4().hex[:8]}"
     firestore_db.collection("point_logs").document(reward_id).set({
         "user_id": payload.user_id,
@@ -475,7 +475,7 @@ def exchange_reward(payload: RewardExchangeRequest):
     coupon_id = str(uuid4())
     coupon_code = make_coupon_code()
     remaining = int(user.get("total_points", 0)) - item[2]
-    coupon = {"coupon_id": coupon_id, "user_id": payload.user_id, "item_id": item[0], "name": item[1], "coupon_code": coupon_code, "status": "사용 가능", "issued_at": datetime.date.today().isoformat()}
+    coupon = {"coupon_id": coupon_id, "user_id": payload.user_id, "item_id": item[0], "name": item[1], "coupon_code": coupon_code, "status": "?ъ슜 媛??, "issued_at": datetime.date.today().isoformat()}
     user_ref(payload.user_id).update({"total_points": remaining})
     firestore_db.collection("coupons").document(coupon_id).set(coupon)
     firestore_db.collection("point_logs").add({"user_id": payload.user_id, "amount": -item[2], "reason": "reward_exchange", "ref_id": coupon_id, "created_at": now})
@@ -510,5 +510,4 @@ def update_lockscreen(user_id: str, settings: LockscreenSettingsSchema):
         "updated_at": now_iso(),
     }, merge=True)
     return settings
-#   m a n u a l   t r i g g e r   0 5 / 0 6 / 2 0 2 6   0 0 : 4 1 : 5 6  
- 
+# manual fix utf8
