@@ -1,4 +1,5 @@
 import datetime
+import random
 import json
 import os
 from random import choices
@@ -17,6 +18,7 @@ from pydantic import BaseModel
 FIREBASE_SERVICE_ACCOUNT_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "")
 FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
 ALLOW_UNVERIFIED_GOOGLE_LOGIN = os.getenv("ALLOW_UNVERIFIED_GOOGLE_LOGIN", "").lower() in ("1", "true", "yes")
+WORDS_PATH = os.path.join(os.path.dirname(__file__), "data", "words.json")
 
 QUIZZES = [
     (1, "다음 중 '혜택'이라는 뜻을 가진 단어는?", '["Benefit", "Battery", "Balance", "Banner"]', 0, "Life English", 1, "Benefit은 혜택이나 이익을 뜻합니다."),
@@ -63,7 +65,7 @@ class GoogleLoginRequest(BaseModel):
 
 class QuizVerifyRequest(BaseModel):
     user_id: str
-    quiz_id: int
+    quiz_id: str
     selected_idx: int
 
 
@@ -96,12 +98,75 @@ def verify_firebase_id_token(raw_token: str) -> dict:
     return claims
 
 
-def quiz_row_to_response(q):
-    return {"quiz_id": q[0], "question": q[1], "options": json.loads(q[2]), "category": q[4], "level": q[5]}
+def load_words():
+    with open(WORDS_PATH, encoding="utf-8") as file:
+        return json.load(file)
 
 
-def quiz_by_id(quiz_id: int):
-    return next((q for q in QUIZZES if q[0] == quiz_id), None)
+WORDS = load_words()
+
+
+def quiz_mode_label(mode: str) -> str:
+    return "영영 퀴즈" if mode == "eng" else "영한 퀴즈"
+
+
+def answer_text(word: dict, mode: str) -> str:
+    return word["english"] if mode == "eng" else word["korean"]
+
+
+def build_word_quiz(word: dict, mode: str, quiz_date: str):
+    if mode not in ("eng", "kor"):
+        raise HTTPException(status_code=400, detail="invalid quiz mode")
+    rng = random.Random(f"{quiz_date}:{mode}:{word['id']}")
+    correct = answer_text(word, mode)
+    distractors = [
+        answer_text(entry, mode)
+        for entry in WORDS
+        if entry["id"] != word["id"] and answer_text(entry, mode) != correct
+    ]
+    options = [correct] + rng.sample(distractors, 3)
+    rng.shuffle(options)
+    return {
+        "quiz_id": f"{mode}:{quiz_date}:{word['id']}",
+        "word_id": word["id"],
+        "unit": word.get("unit", 1),
+        "word": word["word"],
+        "part": word.get("part", ""),
+        "question": word["word"],
+        "options": options,
+        "category": quiz_mode_label(mode),
+        "level": max(1, min(5, (int(word.get("unit", 1)) + 5) // 6)),
+        "explanation": correct,
+        "english": word["english"],
+        "korean": word["korean"],
+        "_correct_idx": options.index(correct),
+        "_mode": mode,
+        "_date": quiz_date,
+    }
+
+
+def daily_word_quizzes(mode: str, quiz_date: str):
+    if mode not in ("eng", "kor"):
+        raise HTTPException(status_code=400, detail="invalid quiz mode")
+    rng = random.Random(f"{quiz_date}:{mode}:daily")
+    picked = rng.sample(WORDS, 10)
+    return [build_word_quiz(word, mode, quiz_date) for word in picked]
+
+
+def public_quiz(quiz: dict):
+    return {key: value for key, value in quiz.items() if not key.startswith("_")}
+
+
+def quiz_by_id(quiz_id: str):
+    try:
+        mode, quiz_date, raw_word_id = str(quiz_id).split(":")
+        word_id = int(raw_word_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="quiz not found")
+    word = next((entry for entry in WORDS if int(entry["id"]) == word_id), None)
+    if not word:
+        raise HTTPException(status_code=404, detail="quiz not found")
+    return build_word_quiz(word, mode, quiz_date)
 
 
 def reward_row_to_response(r):
@@ -200,8 +265,9 @@ def google_login(payload: GoogleLoginRequest):
 
 
 @app.get("/v1/quizzes/daily")
-def daily_quizzes():
-    return [quiz_row_to_response(q) for q in QUIZZES[:10]]
+def daily_quizzes(mode: str = "kor"):
+    today = datetime.date.today().isoformat()
+    return [public_quiz(quiz) for quiz in daily_word_quizzes(mode, today)]
 
 
 @app.post("/v1/quizzes/verify")
@@ -225,21 +291,34 @@ def verify_quiz(payload: QuizVerifyRequest):
         raise HTTPException(status_code=403, detail="quiz already solved")
 
     user = user_doc.to_dict()
-    is_correct = payload.selected_idx == quiz[3]
-    earned = 10 + (quiz[5] - 1) * 3 if is_correct else 2
+    is_correct = payload.selected_idx == quiz["_correct_idx"]
+    earned = 10 + (quiz["level"] - 1) * 3 if is_correct else 2
     total_points = int(user.get("total_points", 0)) + earned
     user_ref(payload.user_id).update({"total_points": total_points})
     firestore_db.collection("solved_logs").document(solved_id).set({
         "user_id": payload.user_id,
         "quiz_id": payload.quiz_id,
+        "mode": quiz["_mode"],
+        "word_id": quiz["word_id"],
         "solved_date": today,
         "selected_idx": payload.selected_idx,
+        "correct_idx": quiz["_correct_idx"],
         "is_correct": is_correct,
         "earned_points": earned,
         "created_at": now,
     })
     firestore_db.collection("point_logs").add({"user_id": payload.user_id, "amount": earned, "reason": "quiz", "ref_id": str(payload.quiz_id), "created_at": now})
-    return {"is_correct": is_correct, "correct_idx": quiz[3], "earned_points": earned, "current_total_points": total_points, "daily_solved": solved_count + 1, "daily_completed": (solved_count + 1) >= 10, "explanation": quiz[6]}
+    return {
+        "is_correct": is_correct,
+        "correct_idx": quiz["_correct_idx"],
+        "earned_points": earned,
+        "current_total_points": total_points,
+        "daily_solved": solved_count + 1,
+        "daily_completed": (solved_count + 1) >= 10,
+        "explanation": quiz["explanation"],
+        "english": quiz["english"],
+        "korean": quiz["korean"],
+    }
 
 
 @app.get("/v1/rewards/items")
