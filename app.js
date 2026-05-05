@@ -424,6 +424,7 @@ function startTimer() {
 }
 
 async function renderQuiz() {
+  // 1. 결과 화면 (10문제 완료 시)
   if (state.completed && state.answers.length % 10 === 0 && state.answers.length > 0) {
     clearInterval(state.timerId);
     $("#quizHead").classList.add("hidden");
@@ -438,7 +439,8 @@ async function renderQuiz() {
     return;
   }
 
-  if (state.quizzes.length === 0) {
+  // 2. 모드 선택 화면 (퀴즈가 로드되지 않았을 때)
+  if (!state.quizzes || state.quizzes.length === 0) {
     $("#quizHead").classList.add("hidden");
     $("#quizProgressWrap").classList.add("hidden");
     $("#quizComplete").classList.add("hidden");
@@ -446,23 +448,11 @@ async function renderQuiz() {
     $("#quizModeSelect")?.classList.remove("hidden");
     return;
   }
-  $("#quizModeSelect")?.classList.add("hidden"); {
-    try {
-      state.quizzes = await withLoading(
-        "퀴즈 로딩 중",
-        "오늘의 문제를 불러오고 있습니다.",
-        () => apiCall(`/quizzes/daily?mode=${state.quizMode}`)
-      );
-    } catch (e) {
-      showToast("퀴즈를 불러오지 못했습니다.");
-      return;
-    }
-  }
 
-  if (state.quizzes.length === 0) {
-    showToast("진행할 수 있는 퀴즈가 없습니다.");
-    return;
-  }
+  // 3. 실제 퀴즈 진행 화면
+  $("#quizModeSelect")?.classList.add("hidden");
+  $("#quizComplete").classList.add("hidden");
+  $("#reviewPanel").classList.add("hidden");
 
   const quiz = state.quizzes[state.current % state.quizzes.length];
   if (!quiz) return;
@@ -471,13 +461,12 @@ async function renderQuiz() {
   $("#quizProgressWrap").classList.remove("hidden");
   $("#quizCategory").textContent = `${quiz.category} · Level ${quiz.level}`;
   $("#quizQuestion").textContent = quiz.question;
-  $("#quizComplete").classList.add("hidden");
-  $("#reviewPanel").classList.add("hidden");
   $("#quizFeedback").classList.add("hidden");
   $("#optionList").innerHTML = (quiz.options || [])
     .map((option, index) => `<button class="option-button" type="button" data-index="${index}">${String.fromCharCode(65 + index)}. ${option}</button>`)
     .join("");
-  $$(".option-button").forEach((button) => {
+    
+  $(".option-button").forEach((button) => {
     button.addEventListener("click", () => verifyAnswer(Number(button.dataset.index)));
   });
   startTimer();
@@ -734,29 +723,9 @@ async function renderLockscreenSettings() {
 }
 
 function bindEvents() {
-  $("#googleLoginButton").addEventListener("click", () => {
-    setButtonBusy($("#googleLoginButton"), true, "Google 확인 중");
-    if (window.NRCBridge?.googleSignIn) {
-      try {
-        window.onNativeGoogleSignIn(window.NRCBridge.googleSignIn());
-      } catch {
-        setButtonBusy($("#googleLoginButton"), false);
-        showToast("Google 로그인 정보를 확인하지 못했습니다.");
-      }
-      return;
-    }
-    continueGoogleLogin({
-      provider: "google",
-      googleSub: `browser-google-${Date.now()}`,
-      email: "",
-      displayName: "Google User"
-    });
-    showToast("브라우저 미리보기에서는 Google 로그인 단계를 시뮬레이션합니다.");
-  });
-
-  $("#loginForm").addEventListener("submit", async (event) => {
+  $("#loginForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const nickname = $("#loginName").value.trim();
+    const nickname = $("#loginNickname").value.trim();
     if (!pendingGoogleUser) {
       showToast("Google 로그인부터 진행해 주세요.");
       return;
@@ -769,12 +738,7 @@ function bindEvents() {
     const submitButton = event.submitter || $("#loginForm button[type='submit']");
     setButtonBusy(submitButton, true, "로그인 중");
     try {
-      const res = await withLoading(
-        "로그인 중",
-        "계정 정보를 확인하고 있습니다.",
-        () => loginWithGoogleUser(pendingGoogleUser, nickname)
-      );
-      
+      const res = await withLoading("로그인 중", "계정 정보를 확인하고 있습니다.", () => loginWithGoogleUser(pendingGoogleUser, nickname));
       applyLoginResponse(res, pendingGoogleUser);
       showToast("로그인되었습니다.");
     } catch (err) {
@@ -784,10 +748,8 @@ function bindEvents() {
     }
   });
 
-  $("#logoutButton").addEventListener("click", () => {
-    if (window.NRCBridge?.signOut) {
-      window.NRCBridge.signOut();
-    }
+  $("#logoutButton")?.addEventListener("click", () => {
+    if (window.NRCBridge?.signOut) window.NRCBridge.signOut();
     localStorage.removeItem("nrc_user_profile");
     localStorage.removeItem("nrc_daily_quiz");
     state.user = null;
@@ -795,37 +757,41 @@ function bindEvents() {
     showToast("로그아웃되었습니다.");
   });
 
-  $$(".nav-item").forEach((item) => item.addEventListener("click", () => {
+  $(".nav-item").forEach((item) => item.addEventListener("click", () => {
     switchView(item.dataset.view);
     syncRoute(item.dataset.view);
   }));
-  $("#startQuiz").addEventListener("click", () => {
-    if (state.completed) {
-      showToast("오늘의 퀴즈는 이미 완료했습니다.");
-      return;
-    }
+
+  // 홈 화면 모드 선택 버튼
+  $("#startQuizKor")?.addEventListener("click", () => {
+    state.quizMode = 'kor';
+    state.quizzes = [];
     switchView("quizView");
-    syncRoute("quizView");
   });
-  $("#lockscreenEnabled").addEventListener("change", (event) => {
+  $("#startQuizEng")?.addEventListener("click", () => {
+    state.quizMode = 'eng';
+    state.quizzes = [];
+    switchView("quizView");
+  });
+
+  // 퀴즈 탭 내부 모드 선택 버튼
+  $(".mode-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      state.quizMode = btn.dataset.mode;
+      fetchQuizzesAndStart();
+    });
+  });
+
+  $("#lockscreenEnabled")?.addEventListener("change", (event) => {
     state.lockscreen.enabled = event.target.checked;
     saveLockscreenSettings();
     showToast(state.lockscreen.enabled ? "잠금화면 퀴즈가 켜졌습니다." : "잠금화면 퀴즈가 꺼졌습니다.");
   });
 
-  $("#lockscreenReward").addEventListener("change", (event) => {
+  $("#lockscreenReward")?.addEventListener("change", (event) => {
     state.lockscreen.rewardPrompt = event.target.checked;
     saveLockscreenSettings();
     showToast(state.lockscreen.rewardPrompt ? "보상 안내가 켜졌습니다." : "보상 안내가 꺼졌습니다.");
-  });
-
-
-
-  $$("[data-view-target]").forEach((button) => {
-    button.addEventListener("click", () => {
-      switchView(button.dataset.viewTarget);
-      syncRoute(button.dataset.viewTarget);
-    });
   });
 
   $("#claimRewardButton")?.addEventListener("click", claimReward);
@@ -835,6 +801,22 @@ function bindEvents() {
 }
 
 
+
+async function fetchQuizzesAndStart() {
+  try {
+    state.quizzes = await withLoading(
+      "퀴즈 로딩 중",
+      "문제를 생성하고 있습니다.",
+      () => apiCall(`/quizzes/daily?mode=${state.quizMode}`)
+    );
+    state.completed = false;
+    state.current = 0;
+    state.answers = [];
+    renderQuiz();
+  } catch (e) {
+    showToast("퀴즈를 불러오지 못했습니다.");
+  }
+}
 
 async function init() {
   bindEvents();
@@ -860,16 +842,3 @@ async function init() {
 }
 
 init();
-
-async function fetchQuizzesAndStart() {
-  try {
-    state.quizzes = await withLoading(
-      "퀴즈 로딩 중",
-      "문제를 생성하고 있습니다.",
-      () => apiCall(`/quizzes/daily?mode=${state.quizMode}`)
-    );
-    renderQuiz();
-  } catch (e) {
-    showToast("퀴즈를 불러오지 못했습니다.");
-  }
-}
