@@ -374,8 +374,7 @@ function startTimer() {
 }
 
 async function renderQuiz() {
-  if (false) { // 무제한 풀기 허용
-    state.completed = true;
+  if (state.completed && state.answers.length % 10 === 0 && state.answers.length > 0) {
     clearInterval(state.timerId);
     $("#quizHead").classList.add("hidden");
     $("#quizProgressWrap").classList.add("hidden");
@@ -439,7 +438,6 @@ async function verifyAnswer(selectedIndex) {
     );
 
     const isCorrect = res.is_correct;
-    const earned = res.earned_points;
     state.points = res.current_total_points;
     state.solved = res.daily_solved;
     state.completed = res.daily_completed;
@@ -457,7 +455,7 @@ async function verifyAnswer(selectedIndex) {
       });
     }
 
-    $$(".option-button").forEach((button) => {
+    $(".option-button").forEach((button) => {
       const index = Number(button.dataset.index);
       if (index === res.correct_idx) button.classList.add("correct");
       if (index === selectedIndex && !isCorrect) button.classList.add("wrong");
@@ -465,14 +463,11 @@ async function verifyAnswer(selectedIndex) {
 
     $("#quizFeedback").innerHTML = `
       <strong>${isCorrect ? "정답입니다" : "아쉬워요"}</strong>
-      <p>${isCorrect ? (earned === 0 ? res.explanation + " (일일 최대 100P 한도 도달)" : res.explanation + " " + earned + "P 적립") : res.explanation}</p>
-      <button id="rewardAd" class="action-button compact" type="button">다음 문제</button>
+      <p>${res.explanation}</p>
+      <button id="nextQuizButton" class="action-button compact" type="button">다음 문제</button>
     `;
     $("#quizFeedback").classList.remove("hidden");
-    $("#rewardAd").addEventListener("click", () => {
-      if (isCorrect) {
-        showToast(`보상형 광고 완료: ${earned}P 추가 (시뮬레이션)`);
-      }
+    $("#nextQuizButton").addEventListener("click", () => {
       nextQuiz();
     });
 
@@ -485,11 +480,47 @@ async function verifyAnswer(selectedIndex) {
 }
 
 function nextQuiz() {
-  if (state.completed) {
-    state.locked = false;
-    renderQuiz();
-    return;
+  state.current = (state.current + 1) % state.quizzes.length;
+  state.locked = false;
+  renderQuiz();
+}
+
+function startNextSet() {
+  state.completed = false;
+  state.answers = [];
+  state.current = 0;
+  switchView("quizView");
+  renderQuiz();
+}
+
+async function claimReward() {
+  if (!state.user) return;
+  try {
+    const res = await withLoading(
+      "리워드 신청 중",
+      "광고 확인 및 포인트 적립을 진행합니다.",
+      () => apiCall('/quizzes/reward', 'POST', {
+        user_id: state.user.user_id,
+        ad_token: "ad_sim_" + Date.now()
+      })
+    );
+    
+    state.points = res.current_total_points;
+    updateStats();
+    
+    if (res.reward_points > 0) {
+      showToast(`축하합니다! ${res.reward_points}P가 적립되었습니다.`);
+    } else if (res.already_claimed) {
+      showToast("오늘의 최대 리워드 한도(100P)에 도달했습니다. 학습은 계속 하실 수 있습니다!");
+    } else {
+      showToast("아쉽게도 이번 세트에서는 획득한 포인트가 없습니다.");
+    }
+    
+    renderReview();
+  } catch (err) {
+    showToast(err.message || "리워드 처리 중 오류가 발생했습니다.");
   }
+}
   state.current = (state.current + 1) % state.quizzes.length;
   state.locked = false;
   renderQuiz();
@@ -720,6 +751,9 @@ function bindEvents() {
       syncRoute(button.dataset.viewTarget);
     });
   });
+
+  $("#claimRewardButton")?.addEventListener("click", claimReward);
+  $("#startNextSetButton")?.addEventListener("click", startNextSet);
 
   window.addEventListener("hashchange", () => switchView(routeFromHash()));
 }

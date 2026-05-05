@@ -321,41 +321,23 @@ def verify_quiz(payload: QuizVerifyRequest):
     if not user_doc.exists:
         raise HTTPException(status_code=404, detail="user not found")
 
-    # 1. 일일 퀴즈 횟수 제한 제거 (무제한 풀기 허용)
-    # solved_count = sum(1 for _ in firestore_db.collection("solved_logs").where("user_id", "==", payload.user_id).where("solved_date", "==", today).stream())
-    
+@app.post("/v1/quizzes/verify")
+def verify_quiz(payload: QuizVerifyRequest):
+    today = datetime.date.today().isoformat()
+    now = now_iso()
+    user_doc = user_ref(payload.user_id).get()
+    if not user_doc.exists:
+        raise HTTPException(status_code=404, detail="user not found")
+        
     quiz = quiz_by_id(payload.quiz_id)
     if not quiz:
         raise HTTPException(status_code=404, detail="quiz not found")
 
     is_correct = payload.selected_idx == quiz["_correct_idx"]
+    
+    # 더 이상 개별 문항마다 포인트를 지급하지 않음 (10개 묶음 보상으로 변경)
     earned_points = 0
-
-    if is_correct:
-        # 오늘 얻은 퀴즈 리워드 총합 계산
-        today_logs = firestore_db.collection("point_logs") \
-            .where("user_id", "==", payload.user_id) \
-            .where("reason", "==", "quiz_reward") \
-            .where("ref_id", "==", today) \
-            .stream()
-        today_earned = sum(log.to_dict().get("amount", 0) for log in today_logs)
-
-        # 일일 리워드 한도 (예: 최대 100P, 문제당 10P)
-        if today_earned < 100:
-            earned_points = 10
-            # 포인트 지급
-            new_total = int(user_doc.to_dict().get("total_points", 0)) + earned_points
-            user_ref(payload.user_id).update({"total_points": new_total})
-            firestore_db.collection("point_logs").add({
-                "user_id": payload.user_id,
-                "amount": earned_points,
-                "reason": "quiz_reward",
-                "ref_id": today,
-                "created_at": now
-            })
-            # Reload user_doc for updated points
-            user_doc = user_ref(payload.user_id).get()
-
+    
     # 중복 풀이를 허용하기 위해 고유한 ID(UUID) 사용
     solved_id = f"{payload.user_id}_{payload.quiz_id}_{today}_{uuid4().hex[:8]}"
     firestore_db.collection("solved_logs").document(solved_id).set({
@@ -372,7 +354,7 @@ def verify_quiz(payload: QuizVerifyRequest):
     })
     
     total_points = int(user_doc.to_dict().get("total_points", 0))
-    # 전체 푼 횟수를 위해 다시 세기
+    # 전체 푼 횟수 확인 (10개 단위 완료 체크용)
     solved_count = sum(1 for _ in firestore_db.collection("solved_logs").where("user_id", "==", payload.user_id).where("solved_date", "==", today).stream())
     
     return {
@@ -381,7 +363,7 @@ def verify_quiz(payload: QuizVerifyRequest):
         "earned_points": earned_points,
         "current_total_points": total_points,
         "daily_solved": solved_count,
-        "daily_completed": solved_count >= 10,
+        "daily_completed": solved_count > 0 and solved_count % 10 == 0,
         "explanation": quiz["explanation"],
         "english": quiz["english"],
         "korean": quiz["korean"],
@@ -396,53 +378,63 @@ def claim_quiz_reward(payload: QuizRewardRequest):
     if not user_doc.exists:
         raise HTTPException(status_code=404, detail="user not found")
 
+    # 오늘 이미 받은 누적 보상 확인
+    existing_rewards = firestore_db.collection("point_logs") \
+        .where("user_id", "==", payload.user_id) \
+        .where("reason", "==", "daily_quiz_reward") \
+        .where("ref_id", "==", today) \
+        .stream()
+    total_earned_today = sum(int(doc.to_dict().get("amount", 0)) for doc in existing_rewards)
+
+    # 최근 10개 풀이 기록을 기반으로 보상 계산
     solved_logs = [
         doc.to_dict()
         for doc in firestore_db.collection("solved_logs")
         .where("user_id", "==", payload.user_id)
         .where("solved_date", "==", today)
+        .order_by("created_at", direction=firestore.Query.DESCENDING)
+        .limit(10)
         .stream()
     ]
-    solved_count = len(solved_logs)
-    if solved_count < 10:
+    
+    if len(solved_logs) < 10:
         raise HTTPException(status_code=400, detail="daily quiz not completed")
-
-    reward_id = f"{payload.user_id}_{today}_daily_quiz_reward"
-    reward_ref = firestore_db.collection("point_logs").document(reward_id)
-    existing_reward = reward_ref.get()
-    if existing_reward.exists:
-        reward = existing_reward.to_dict()
-        return {
-            "already_claimed": True,
-            "reward_points": int(reward.get("amount", 0)),
-            "reward_percent": int(reward.get("reward_percent", 0)),
-            "correct_count": int(reward.get("correct_count", 0)),
-            "current_total_points": int(user_doc.to_dict().get("total_points", 0)),
-        }
 
     correct_count = sum(1 for log in solved_logs if log.get("is_correct"))
     reward_percent = min(100, max(0, correct_count * 10))
-    reward_points = int(DAILY_QUIZ_REWARD_MAX_POINTS * reward_percent / 100)
+    
+    # 10문제 세트당 기본 보상 (최대 100P 중 정답률 반영)
+    potential_reward = int(DAILY_QUIZ_REWARD_MAX_POINTS * reward_percent / 100)
+    
+    # 일일 총합 100P 한도 적용
+    remaining_cap = max(0, 100 - total_earned_today)
+    reward_points = min(potential_reward, remaining_cap)
+
     current_points = int(user_doc.to_dict().get("total_points", 0))
     total_points = current_points + reward_points
     user_ref(payload.user_id).update({"total_points": total_points})
-    reward_ref.set({
+
+    # 무제한 반복 가능하도록 고유 ID로 저장 (ref_id는 날짜 유지하여 한도 체크에 사용)
+    reward_id = f"{payload.user_id}_{today}_reward_{uuid4().hex[:8]}"
+    firestore_db.collection("point_logs").document(reward_id).set({
         "user_id": payload.user_id,
         "amount": reward_points,
         "reason": "daily_quiz_reward",
         "ref_id": today,
         "correct_count": correct_count,
-        "solved_count": solved_count,
+        "solved_count": 10,
         "reward_percent": reward_percent,
         "ad_token": payload.ad_token,
         "created_at": now,
     })
+    
     return {
-        "already_claimed": False,
+        "already_claimed": total_earned_today >= 100,
         "reward_points": reward_points,
         "reward_percent": reward_percent,
         "correct_count": correct_count,
         "current_total_points": total_points,
+        "daily_total_earned": total_earned_today + reward_points
     }
 
 
