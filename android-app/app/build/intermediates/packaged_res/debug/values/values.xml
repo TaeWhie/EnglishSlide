@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="default_web_client_id" translatable="false">426010932178-hcj6p503u4ntsfq6f2jlog8noak4gakq.apps.googleusercontent.com</string>
+    <string name="gcm_defaultSenderId" translatable="false">426010932178</string>
+    <string name="google_api_key" translatable="false">AIzaSyDe4BpYDiMbGTWjYq5-_TtQvgxmIkHQ840</string>
+    <string name="google_app_id" translatable="false">1:426010932178:android:75e9911de1daada4610e0b</string>
+    <string name="google_crash_reporting_api_key" translatable="false">AIzaSyDe4BpYDiMbGTWjYq5-_TtQvgxmIkHQ840</string>
+    <string name="google_storage_bucket" translatable="false">englishslide-4deea.firebasestorage.app</string>
+    <string name="google_web_client_id">358180637858-1cc70si61cjnftpeckfnvqps7onbbr0q.apps.googleusercontent.com</string>
+    <string name="project_id" translatable="false">englishslide-4deea</string>
     <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowLightStatusBar">true</item>
@@ -7,5 +15,14 @@
         <item name="android:navigationBarColor">#FFFFFF</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowActionBar">false</item>
+    </style>
+    <style name="LockQuizTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowIsTranslucent">false</item>
+        <item name="android:windowShowWallpaper">true</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
     </style>
 </resources>

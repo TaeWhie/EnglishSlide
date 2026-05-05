@@ -1,18 +1,18 @@
 [
     {
-        "merged": "C:\\Users\\User\\Desktop\\EnglishSlide\\android-app\\app\\build\\intermediates\\merged_res\\debug\\mipmap-anydpi-v26_ic_launcher_round.xml.flat",
-        "source": "C:\\Users\\User\\Desktop\\EnglishSlide\\android-app\\app\\src\\main\\res\\mipmap-anydpi-v26\\ic_launcher_round.xml"
+        "merged": "com.nrc.quiz.app-merged_res-13:/mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "com.nrc.quiz.app-main-15:/mipmap-anydpi-v26/ic_launcher.xml"
     },
     {
-        "merged": "C:\\Users\\User\\Desktop\\EnglishSlide\\android-app\\app\\build\\intermediates\\merged_res\\debug\\drawable_ic_launcher_background.xml.flat",
-        "source": "C:\\Users\\User\\Desktop\\EnglishSlide\\android-app\\app\\src\\main\\res\\drawable\\ic_launcher_background.xml"
+        "merged": "com.nrc.quiz.app-merged_res-13:/drawable_ic_launcher_background.xml.flat",
+        "source": "com.nrc.quiz.app-main-15:/drawable/ic_launcher_background.xml"
     },
     {
-        "merged": "C:\\Users\\User\\Desktop\\EnglishSlide\\android-app\\app\\build\\intermediates\\merged_res\\debug\\drawable_ic_launcher_foreground.xml.flat",
-        "source": "C:\\Users\\User\\Desktop\\EnglishSlide\\android-app\\app\\src\\main\\res\\drawable\\ic_launcher_foreground.xml"
+        "merged": "com.nrc.quiz.app-merged_res-13:/mipmap-anydpi-v26_ic_launcher_round.xml.flat",
+        "source": "com.nrc.quiz.app-main-15:/mipmap-anydpi-v26/ic_launcher_round.xml"
     },
     {
-        "merged": "C:\\Users\\User\\Desktop\\EnglishSlide\\android-app\\app\\build\\intermediates\\merged_res\\debug\\mipmap-anydpi-v26_ic_launcher.xml.flat",
-        "source": "C:\\Users\\User\\Desktop\\EnglishSlide\\android-app\\app\\src\\main\\res\\mipmap-anydpi-v26\\ic_launcher.xml"
+        "merged": "com.nrc.quiz.app-merged_res-13:/drawable_ic_launcher_foreground.xml.flat",
+        "source": "com.nrc.quiz.app-main-15:/drawable/ic_launcher_foreground.xml"
     }
 ]
