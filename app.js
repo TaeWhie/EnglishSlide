@@ -11,6 +11,7 @@ const savedProfile = JSON.parse(localStorage.getItem("nrc_user_profile") || "nul
 let pendingGoogleUser = null;
 
 const state = {
+  incorrectWords: JSON.parse(localStorage.getItem("nrc_incorrect_words") || "[]"),
   quizMode: 'kor',
   user: savedProfile,
   points: savedProfile ? savedProfile.total_points || 0 : 0,
@@ -374,6 +375,7 @@ function switchView(viewId) {
   } else if (viewId === "reportView") {
     renderCoupons();
     renderLockscreenSettings();
+    renderIncorrectWords();
     clearInterval(state.timerId);
     state.locked = false;
   } else {
@@ -520,7 +522,10 @@ async function verifyAnswer(selectedIndex) {
     $$(".option-button").forEach((button) => {
       const index = Number(button.dataset.index);
       if (index === res.correct_idx) button.classList.add("correct");
-      if (index === selectedIndex && !isCorrect) button.classList.add("wrong");
+      if (index === selectedIndex && !isCorrect) {
+        button.classList.add("wrong");
+        saveIncorrectWord(quiz);
+      }
     });
 
     $("#quizFeedback").innerHTML = `
@@ -801,11 +806,73 @@ function bindEvents() {
 
   $("#claimRewardButton")?.addEventListener("click", claimReward);
   $("#startNextSetButton")?.addEventListener("click", startNextSet);
+  $("#startIncorrectQuiz")?.addEventListener("click", startIncorrectQuiz);
 
   window.addEventListener("hashchange", () => switchView(routeFromHash()));
 }
 
 
+
+function saveIncorrectWord(quiz) {
+  if (!state.incorrectWords.some(w => w.word === quiz.word)) {
+    state.incorrectWords.push({
+      word: quiz.word,
+      korean: quiz.korean,
+      english: quiz.english,
+      category: quiz.category,
+      level: quiz.level
+    });
+    localStorage.setItem("nrc_incorrect_words", JSON.stringify(state.incorrectWords));
+  }
+}
+
+function renderIncorrectWords() {
+  const container = $("#incorrectWordList");
+  if (!container) return;
+  if (state.incorrectWords.length === 0) {
+    container.innerHTML = '<p class="empty-msg" style="text-align: center; color: var(--muted); padding: 20px 0;">틀린 단어가 아직 없습니다.</p>';
+    return;
+  }
+  container.innerHTML = state.incorrectWords.map(w => `
+    <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #f0f0f0; padding: 10px 4px;">
+      <strong style="color: var(--ink);">${w.word}</strong>
+      <span style="color: var(--muted);">${w.korean}</span>
+    </div>
+  `).join("");
+}
+
+function startIncorrectQuiz() {
+  if (state.incorrectWords.length < 4) {
+    showToast("오답 퀴즈를 풀려면 최소 4개의 틀린 단어가 필요합니다.");
+    return;
+  }
+  const picked = [...state.incorrectWords].sort(() => 0.5 - Math.random()).slice(0, 10);
+  state.quizzes = picked.map(w => {
+    const distractors = state.incorrectWords
+      .filter(dw => dw.word !== w.word)
+      .sort(() => 0.5 - Math.random())
+      .slice(0, 3)
+      .map(dw => dw.korean);
+    while(distractors.length < 3) distractors.push("해당 없음");
+    const options = [w.korean, ...distractors].sort(() => 0.5 - Math.random());
+    return {
+      quiz_id: "incorrect_" + w.word,
+      word: w.word,
+      question: w.word,
+      options: options,
+      category: "오답 복습",
+      level: w.level || 1,
+      explanation: w.korean,
+      _correct_idx: options.indexOf(w.korean)
+    };
+  });
+  state.quizMode = 'incorrect';
+  state.completed = false;
+  state.current = 0;
+  state.answers = [];
+  switchView("quizView");
+  renderQuiz();
+}
 
 async function fetchQuizzesAndStart() {
   try {
