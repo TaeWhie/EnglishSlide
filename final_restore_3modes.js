@@ -1,4 +1,9 @@
-<!DOCTYPE html>
+const fs = require('fs');
+const path = require('path');
+
+// 1. index.html 복구 및 3버튼 적용
+const htmlPath = path.join(__dirname, 'index.html');
+let html = \`<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
@@ -61,7 +66,7 @@
             </article>
             <article class="metric">
               <p>오늘 적립 가능</p>
-              <strong>100P</strong>
+              <strong>1,000P</strong>
               <span>퀴즈와 보상 광고로 적립</span>
             </article>
           </div>
@@ -195,4 +200,24 @@
   </div>
   <script src="app.js"></script>
 </body>
-</html>
+</html>\`;
+
+fs.writeFileSync(htmlPath, html);
+
+// 2. app.js 수정 - startQuizMixed 이벤트 추가
+const appJsPath = path.join(__dirname, 'app.js');
+let appJs = fs.readFileSync(appJsPath, 'utf8');
+
+// bindEvents 내부의 startQuizMixed 추가
+if (!appJs.includes('startQuizMixed')) {
+    appJs = appJs.replace(/\$\("#startQuizKor"\)\?\.addEventListener\("click", \(\) => \{/, \`
+  $("#startQuizMixed")?.addEventListener("click", () => {
+    state.quizMode = 'mixed';
+    state.quizzes = [];
+    switchView("quizView");
+  });
+  $("#startQuizKor")?.addEventListener("click", () => {\`);
+}
+
+fs.writeFileSync(appJsPath, appJs);
+console.log('done');

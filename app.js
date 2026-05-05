@@ -763,6 +763,11 @@ function bindEvents() {
   }));
 
   // 홈 화면 모드 선택 버튼
+  $("#startQuizMixed")?.addEventListener("click", () => {
+    state.quizMode = 'mixed';
+    state.quizzes = [];
+    switchView("quizView");
+  });
   $("#startQuizKor")?.addEventListener("click", () => {
     state.quizMode = 'kor';
     state.quizzes = [];

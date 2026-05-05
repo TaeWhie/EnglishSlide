@@ -310,6 +310,21 @@ def google_login(payload: GoogleLoginRequest):
 @app.get("/v1/quizzes/daily")
 def daily_quizzes(mode: str = "kor"):
     today = datetime.date.today().isoformat()
+    if mode == "mixed":
+        unit = unit_for_date(today)
+        unit_words = words_for_unit(unit)
+        if len(unit_words) < 5:
+            raise HTTPException(status_code=500, detail="not enough words for mixed unit")
+        
+        rng = random.Random(f"{today}:mixed:unit:{unit}")
+        picked = rng.sample(unit_words, min(10, len(unit_words)))
+        quizzes = []
+        for i, word in enumerate(picked):
+            m = "kor" if i < 5 else "eng"
+            quizzes.append(public_quiz(build_word_quiz(word, m, today)))
+        rng.shuffle(quizzes)
+        return quizzes
+    
     return [public_quiz(quiz) for quiz in daily_word_quizzes(mode, today)]
 
 
