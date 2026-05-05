@@ -284,10 +284,10 @@ public class LockQuizActivity extends Activity {
                     if (Math.abs(distX) > Math.abs(distY) * 1.5f) {
                         if (distX < -threshPx || velX < -velThreshPx) {
                             // 좌 스와이프 → 잠금해제
-                            finish();
+                            performUnlock();
                         } else if (distX > threshPx || velX > velThreshPx) {
                             // 우 스와이프 → 퀴즈
-                            openQuiz();
+                            performOpenQuiz();
                         }
                     }
                 }
@@ -314,7 +314,7 @@ public class LockQuizActivity extends Activity {
         unlockHint = text("← 잠금해제", Color.argb(217, 255, 255, 255), 14, Typeface.BOLD);
         unlockHint.setAlpha(0.85f);
         unlockHint.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-        unlockHint.setOnClickListener(v -> finish());
+        unlockHint.setOnClickListener(v -> performUnlock());
         hintRow.addView(unlockHint, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
 
         TextView dot = text("·", Color.argb(140, 255, 255, 255), 16, Typeface.NORMAL);
@@ -323,7 +323,7 @@ public class LockQuizActivity extends Activity {
         quizHint = text("퀴즈 →", Color.argb(217, 255, 255, 255), 14, Typeface.BOLD);
         quizHint.setAlpha(0.85f);
         quizHint.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        quizHint.setOnClickListener(v -> openQuiz());
+        quizHint.setOnClickListener(v -> performOpenQuiz());
         hintRow.addView(quizHint, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
 
         shell.addView(hintRow, matchWrap());
@@ -335,11 +335,11 @@ public class LockQuizActivity extends Activity {
         slide.setBackground(pill(Color.argb(48, 255, 255, 255), Color.argb(62, 255, 255, 255)));
 
         TextView unlock = action("← 잠금 열기", Color.WHITE, Color.argb(42, 255, 255, 255));
-        unlock.setOnClickListener(v -> finish());
+        unlock.setOnClickListener(v -> performUnlock());
         slide.addView(unlock, new LinearLayout.LayoutParams(0, dp(56), 1));
 
         TextView quiz = action("문제 풀기 →", Color.rgb(18, 34, 59), Color.WHITE);
-        quiz.setOnClickListener(v -> openQuiz());
+        quiz.setOnClickListener(v -> performOpenQuiz());
         LinearLayout.LayoutParams quizParams = new LinearLayout.LayoutParams(0, dp(56), 1);
         quizParams.setMargins(dp(6), 0, 0, 0);
         slide.addView(quiz, quizParams);
@@ -409,20 +409,53 @@ public class LockQuizActivity extends Activity {
         return todayWords.get(wordIndex);
     }
 
-    private void openQuiz() {
-        Intent launch = new Intent(this, MainActivity.class);
-        launch.putExtra(MainActivity.EXTRA_ROUTE, "quiz");
-        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        startActivity(launch);
-        finish();
+    private void unlockAndRun(Runnable onSuccess) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            KeyguardManager keyguardManager = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+            if (keyguardManager != null && keyguardManager.isKeyguardLocked()) {
+                keyguardManager.requestDismissKeyguard(this, new KeyguardManager.KeyguardDismissCallback() {
+                    @Override
+                    public void onDismissSucceeded() {
+                        if (onSuccess != null) onSuccess.run();
+                    }
+                    @Override
+                    public void onDismissCancelled() {
+                        // Stay on lock screen
+                    }
+                    @Override
+                    public void onDismissError() {
+                        // Stay on lock screen
+                    }
+                });
+            } else {
+                if (onSuccess != null) onSuccess.run();
+            }
+        } else {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD);
+            if (onSuccess != null) onSuccess.run();
+        }
+    }
+
+    private void performUnlock() {
+        unlockAndRun(this::finish);
+    }
+
+    private void performOpenQuiz() {
+        unlockAndRun(() -> {
+            Intent launch = new Intent(this, MainActivity.class);
+            launch.putExtra(MainActivity.EXTRA_ROUTE, "quiz");
+            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            startActivity(launch);
+            finish();
+        });
     }
 
     private void openPhone() {
-        startShortcut(new Intent(Intent.ACTION_DIAL, Uri.parse("tel:")));
+        unlockAndRun(() -> startShortcut(new Intent(Intent.ACTION_DIAL, Uri.parse("tel:"))));
     }
 
     private void openCamera() {
-        startShortcut(new Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA));
+        unlockAndRun(() -> startShortcut(new Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)));
     }
 
     private void startShortcut(Intent intent) {

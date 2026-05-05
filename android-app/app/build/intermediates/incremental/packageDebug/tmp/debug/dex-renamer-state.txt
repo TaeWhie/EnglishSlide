@@ -1,4 +1,4 @@
-#Tue May 05 21:48:31 KST 2026
+#Tue May 05 21:55:18 KST 2026
 base.2=C\:\\Users\\User\\Desktop\\EnglishSlide\\android-app\\app\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\14\\classes.dex
 path.2=14/classes.dex
 base.1=C\:\\Users\\User\\Desktop\\EnglishSlide\\android-app\\app\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\0\\classes.dex
