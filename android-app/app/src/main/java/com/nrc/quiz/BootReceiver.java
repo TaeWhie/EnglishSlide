@@ -5,7 +5,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Build;
-import android.provider.Settings;
 
 public class BootReceiver extends BroadcastReceiver {
     @Override
@@ -13,7 +12,7 @@ public class BootReceiver extends BroadcastReceiver {
         if (!Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) return;
 
         SharedPreferences prefs = context.getSharedPreferences(LockQuizOverlayService.PREFS, Context.MODE_PRIVATE);
-        if (!prefs.getBoolean(LockQuizOverlayService.KEY_ENABLED, false) || !Settings.canDrawOverlays(context)) {
+        if (!prefs.getBoolean(LockQuizOverlayService.KEY_ENABLED, false)) {
             return;
         }
 

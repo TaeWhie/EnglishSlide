@@ -2,7 +2,6 @@ package com.nrc.quiz;
 
 import android.annotation.SuppressLint;
 import android.Manifest;
-import android.app.AlertDialog;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -32,6 +31,7 @@ import com.google.firebase.auth.GoogleAuthProvider;
 import org.json.JSONObject;
 
 public class MainActivity extends Activity {
+    public static final String EXTRA_ROUTE = "com.nrc.quiz.EXTRA_ROUTE";
     private static final int RC_GOOGLE_SIGN_IN = 1001;
     private static final int RC_POST_NOTIFICATIONS = 1002;
     private WebView webView;
@@ -64,9 +64,15 @@ public class MainActivity extends Activity {
         }
         webView.addJavascriptInterface(new NativeBridge(), "NRCBridge");
         webView.setWebViewClient(new WebViewClient());
-        webView.loadUrl("file:///android_asset/www/index.html");
+        webView.loadUrl(initialUrl());
         requestStartupPermissions();
         syncLockscreenService();
+    }
+
+    private String initialUrl() {
+        String route = getIntent().getStringExtra(EXTRA_ROUTE);
+        String hash = "quiz".equals(route) ? "#quiz" : "";
+        return "file:///android_asset/www/index.html" + hash;
     }
 
     private void configureSystemBars() {
@@ -91,26 +97,22 @@ public class MainActivity extends Activity {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, RC_POST_NOTIFICATIONS);
         }
 
-        if (!Settings.canDrawOverlays(this)) {
-            new AlertDialog.Builder(this)
-                    .setTitle("잠금화면 퀴즈 권한")
-                    .setMessage("잠금화면 위에 퀴즈와 보상 안내를 보여주려면 '다른 앱 위에 표시' 권한이 필요합니다.")
-                    .setPositiveButton("권한 설정", (dialog, which) -> openOverlayPermissionSettings())
-                    .setNegativeButton("나중에", null)
-                    .show();
-        }
-    }
-
-    private void openOverlayPermissionSettings() {
-        Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION);
-        intent.setData(Uri.parse("package:" + getPackageName()));
-        startActivity(intent);
+        // The lock quiz is now a show-when-locked Activity, so overlay permission is not required.
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         syncLockscreenService();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (webView != null && "quiz".equals(intent.getStringExtra(EXTRA_ROUTE))) {
+            webView.loadUrl("file:///android_asset/www/index.html#quiz");
+        }
     }
 
     private void updateNativeLockscreenSettings(boolean enabled, boolean rewardPrompt) {
@@ -126,7 +128,7 @@ public class MainActivity extends Activity {
         SharedPreferences prefs = getSharedPreferences(LockQuizOverlayService.PREFS, MODE_PRIVATE);
         boolean enabled = prefs.getBoolean(LockQuizOverlayService.KEY_ENABLED, false);
         Intent service = new Intent(this, LockQuizOverlayService.class);
-        if (enabled && Settings.canDrawOverlays(this)) {
+        if (enabled) {
             service.setAction(LockQuizOverlayService.ACTION_SYNC_SETTINGS);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(service);
@@ -270,11 +272,6 @@ public class MainActivity extends Activity {
             Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
             intent.setData(Uri.parse("package:" + getPackageName()));
             startActivity(intent);
-        }
-
-        @JavascriptInterface
-        public void openOverlaySettings() {
-            openOverlayPermissionSettings();
         }
 
         @JavascriptInterface

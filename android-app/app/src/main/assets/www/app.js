@@ -1,149 +1,22 @@
-const API_BASE = "https://nrc-backend-llgx.onrender.com/v1";
-
-async function apiCall(endpoint, method = "GET", body = null) {
-  const options = {
-    method,
-    headers: { "Content-Type": "application/json" }
-  };
-  if (body) options.body = JSON.stringify(body);
-  const res = await fetch(`${API_BASE}${endpoint}`, options);
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: "API Error" }));
-    throw new Error(error.detail || "API 오류가 발생했습니다.");
-  }
-  return res.json();
-}
-
-const quizzes = [
-  {
-    question: "다음 중 '혜택'이라는 뜻을 가진 단어는?",
-    options: ["Benefit", "Battery", "Balance", "Banner"],
-    answer: 0,
-    category: "Life English",
-    level: 1,
-    explanation: "Benefit은 혜택이나 이익을 뜻합니다."
-  },
-  {
-    question: "I would like to order some ____ at the cafe.",
-    options: ["coffee", "coffees", "coffeed", "coffeeing"],
-    answer: 0,
-    category: "Sentence Completion",
-    level: 2,
-    explanation: "음료를 주문하는 문장에서는 some coffee가 자연스럽습니다."
-  },
-  {
-    question: "'광고 수익'에 가장 가까운 표현은?",
-    options: ["Ad revenue", "App review", "Ad reverse", "Api value"],
-    answer: 0,
-    category: "Business & Finance",
-    level: 2,
-    explanation: "Ad revenue는 광고를 통해 발생한 수익입니다."
-  },
-  {
-    question: "'예약을 확인하다'에 가장 가까운 표현은?",
-    options: ["Confirm a reservation", "Cancel a station", "Carry a reason", "Change a season"],
-    answer: 0,
-    category: "Travel English",
-    level: 3,
-    explanation: "Confirm a reservation은 예약을 확인하다는 뜻입니다."
-  },
-  {
-    question: "The reward is ____ after watching the video ad.",
-    options: ["doubled", "doubling", "doublet", "doubles"],
-    answer: 0,
-    category: "Reward English",
-    level: 2,
-    explanation: "수동태 문장에서는 is doubled가 맞습니다."
-  },
-  {
-    question: "'연속 참여 일수'를 앱 지표로 표현할 때 쓰는 단어는?",
-    options: ["Streak", "Stack", "Strike", "Stream"],
-    answer: 0,
-    category: "Life English",
-    level: 1,
-    explanation: "Streak는 연속 기록을 뜻합니다."
-  },
-  {
-    question: "A payout ratio of 95% means users receive ____ of ad income.",
-    options: ["most", "none", "half", "less"],
-    answer: 0,
-    category: "Business & Finance",
-    level: 2,
-    explanation: "95%는 대부분의 수익을 사용자에게 환원한다는 의미입니다."
-  },
-  {
-    question: "'매일 연습하면 실력이 좋아진다'에 어울리는 단어는?",
-    options: ["improve", "import", "invite", "invent"],
-    answer: 0,
-    category: "Grammar Practice",
-    level: 3,
-    explanation: "Improve는 나아지다, 향상되다라는 뜻입니다."
-  },
-  {
-    question: "'학습 리포트'를 영어 화면명으로 쓰면?",
-    options: ["Learning Report", "Loading Ratio", "Legal Route", "Local Reward"],
-    answer: 0,
-    category: "Life English",
-    level: 1,
-    explanation: "Learning Report가 학습 리포트에 해당합니다."
-  },
-  {
-    question: "Offerwall 미션 완료 시 사용자가 받는 것은?",
-    options: ["Points", "Ports", "Posts", "Parts"],
-    answer: 0,
-    category: "Reward English",
-    level: 1,
-    explanation: "리워드 앱에서는 미션 완료 보상으로 points를 받습니다."
-  }
-];
-
-const shopItems = [
-  {
-    id: "voucher_5k",
-    icon: "5K",
-    name: "5천원 금액권",
-    price: 5000,
-    description: "제품 구매에 사용할 수 있는 기본 금액권"
-  },
-  {
-    id: "voucher_10k",
-    icon: "1만",
-    name: "1만원 금액권",
-    price: 10000,
-    description: "가장 많이 선택되는 실속형 금액권"
-  },
-  {
-    id: "voucher_30k",
-    icon: "3만",
-    name: "3만원 금액권",
-    price: 30000,
-    description: "포인트를 모아 더 큰 혜택으로 교환"
-  },
-  {
-    id: "voucher_50k",
-    icon: "5만",
-    name: "5만원 금액권",
-    price: 50000,
-    description: "고액 교환을 위한 프리미엄 금액권"
-  }
-];
+// 로컬 환경과 배포 환경(Render)의 API 주소를 분기처리합니다.
+// TODO: 배포 후 your-backend-service.onrender.com 부분을 실제 백엔드 주소로 변경하세요.
+const API_BASE = window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost"
+  ? "http://127.0.0.1:8000/v1"
+  : "https://nrc-backend-llgx.onrender.com/v1";
 
 const todayKey = new Date().toISOString().slice(0, 10);
 const savedDaily = JSON.parse(localStorage.getItem("nrc_daily_quiz") || "{}");
 const initialDaily = savedDaily.date === todayKey ? savedDaily : { date: todayKey, solved: 0, current: 0, completed: false, answers: [] };
-const savedCoupons = JSON.parse(localStorage.getItem("nrc_coupons") || "[]");
-const savedLockscreen = JSON.parse(localStorage.getItem("nrc_lockscreen_settings") || "{}");
 const savedProfile = JSON.parse(localStorage.getItem("nrc_user_profile") || "null");
 let pendingGoogleUser = null;
 
 const state = {
   user: savedProfile,
-  points: Number(localStorage.getItem("nrc_points")) || 1250,
-  coupons: Array.isArray(savedCoupons) ? savedCoupons : [],
-  lockscreen: {
-    enabled: savedLockscreen.enabled ?? true,
-    rewardPrompt: savedLockscreen.rewardPrompt ?? true
-  },
+  points: savedProfile ? savedProfile.total_points || 0 : 0,
+  coupons: [],
+  lockscreen: { enabled: true, rewardPrompt: true },
+  quizzes: [],
+  shopItems: [],
   solved: initialDaily.solved,
   current: initialDaily.current,
   completed: initialDaily.completed,
@@ -198,6 +71,29 @@ function setButtonBusy(button, busy, label = "처리 중") {
   button.classList.toggle("is-loading", busy);
 }
 
+async function apiCall(endpoint, method = 'GET', body = null) {
+  const options = {
+    method,
+    headers: { 'Content-Type': 'application/json' }
+  };
+  
+  if (body) {
+    options.body = JSON.stringify(body);
+  }
+  
+  try {
+    const res = await fetch(`${API_BASE}${endpoint}`, options);
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ detail: 'API Error' }));
+      throw new Error(error.detail || "API 오류가 발생했습니다.");
+    }
+    return await res.json();
+  } catch (err) {
+    console.error("API Call Error:", err);
+    throw err;
+  }
+}
+
 function formatNumber(value) {
   return new Intl.NumberFormat("ko-KR").format(value);
 }
@@ -210,7 +106,6 @@ function updateStats() {
   updateProfileStats();
   updateGoalSummary();
   $("#todayRevenue").textContent = `${formatNumber(state.totalRevenue)}원`;
-  localStorage.setItem("nrc_points", String(state.points));
   localStorage.setItem("nrc_daily_quiz", JSON.stringify({
     date: todayKey,
     solved: state.solved,
@@ -219,8 +114,6 @@ function updateStats() {
     answers: state.answers
   }));
   updateQuizEntryState();
-  saveCoupons();
-  saveLockscreenSettings();
   renderCoupons();
   renderProfile();
 }
@@ -262,6 +155,84 @@ function completeGoogleStep(googleUser) {
   $("#loginName").focus();
 }
 
+function applyLoginResponse(res, googleUser) {
+  state.user = {
+    provider: "google",
+    googleSub: res.google_sub || googleUser.googleSub,
+    email: res.email || googleUser.email || "",
+    nickname: res.nickname,
+    user_id: res.user_id,
+    access_token: res.access_token,
+    total_points: res.total_points,
+    loggedInAt: new Date().toISOString()
+  };
+  state.points = res.total_points;
+
+  // 서버 기준 오늘 진행도로 동기화 (기존 계정 재로그인 시 복원)
+  if (typeof res.daily_solved === "number") {
+    state.solved = res.daily_solved;
+    state.current = res.daily_solved;
+    state.completed = Boolean(res.daily_completed);
+    localStorage.setItem("nrc_daily_quiz", JSON.stringify({
+      date: todayKey,
+      solved: state.solved,
+      current: state.current,
+      completed: state.completed,
+      answers: state.answers
+    }));
+  }
+
+  localStorage.setItem("nrc_user_profile", JSON.stringify(state.user));
+  pendingGoogleUser = null;
+  $("#googleLoginButton").classList.remove("hidden");
+  $("#loginForm").classList.add("hidden");
+  $("#loginName").value = "";
+  showApp();
+  renderProfile();
+  updateStats();
+}
+
+async function loginWithGoogleUser(googleUser, nickname = "") {
+  const res = await fetch(`${API_BASE}/auth/google-login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      google_sub: googleUser.googleSub,
+      email: googleUser.email || "",
+      nickname,
+      id_token: googleUser.idToken || googleUser.id_token || ""
+    })
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "API Error" }));
+    const apiError = new Error(error.detail || "Google login failed.");
+    apiError.status = res.status;
+    apiError.detail = error.detail;
+    throw apiError;
+  }
+  return res.json();
+}
+
+async function continueGoogleLogin(googleUser) {
+  setButtonBusy($("#googleLoginButton"), true, "로그인 중");
+  try {
+    const res = await withLoading(
+      "로그인 중",
+      "DB에 저장된 계정 정보를 확인하고 있습니다.",
+      () => loginWithGoogleUser(googleUser)
+    );
+    applyLoginResponse(res, googleUser);
+    showToast("로그인되었습니다.");
+  } catch (err) {
+    if (err.status === 409 && err.detail === "nickname required") {
+      completeGoogleStep(googleUser);
+      return;
+    }
+    setButtonBusy($("#googleLoginButton"), false);
+    showToast(err.message || "로그인 처리 중 오류가 발생했습니다.");
+  }
+}
+
 function normalizeNativeGooglePayload(payload) {
   if (!payload) return null;
   if (typeof payload === "string") {
@@ -286,7 +257,7 @@ window.onNativeGoogleSignIn = (payload) => {
     showToast("Google 로그인 정보를 확인하지 못했습니다.");
     return;
   }
-  completeGoogleStep(googleUser);
+  continueGoogleLogin(googleUser);
 };
 
 window.onNativeGoogleSignInError = (message) => {
@@ -304,24 +275,27 @@ function updateProfileStats() {
   profilePoints.textContent = `${formatNumber(state.points)}P`;
 }
 
-function saveCoupons() {
-  localStorage.setItem("nrc_coupons", JSON.stringify(state.coupons));
-}
-
-function saveLockscreenSettings() {
-  localStorage.setItem("nrc_lockscreen_settings", JSON.stringify(state.lockscreen));
+async function saveLockscreenSettings() {
+  if (!state.user) return;
   syncNativeLockscreenSettings();
+  try {
+    await apiCall(`/settings/lockscreen?user_id=${state.user.user_id}`, 'PUT', state.lockscreen);
+  } catch (err) {
+    console.error(err);
+  }
 }
 
 function syncNativeLockscreenSettings() {
   if (window.NRCBridge?.updateLockscreenSettings) {
-    window.NRCBridge.updateLockscreenSettings(Boolean(state.lockscreen.enabled), Boolean(state.lockscreen.rewardPrompt));
+    const rewardPrompt = state.lockscreen.reward_prompt ?? state.lockscreen.rewardPrompt ?? true;
+    window.NRCBridge.updateLockscreenSettings(Boolean(state.lockscreen.enabled), Boolean(rewardPrompt));
   }
 }
 
 function updateGoalSummary() {
-  const nextItem = shopItems.find((item) => item.price > state.points) || shopItems[shopItems.length - 1];
-  const remain = Math.max(0, nextItem.price - state.points);
+  if (state.shopItems.length === 0) return;
+  const nextItem = state.shopItems.find((item) => item.price_points > state.points) || state.shopItems[state.shopItems.length - 1];
+  const remain = Math.max(0, nextItem.price_points - state.points);
   $("#nextGoal").textContent = nextItem.name;
   $("#goalRemain").textContent = remain === 0 ? "교환 가능" : `${formatNumber(remain)}P 남음`;
 }
@@ -399,7 +373,7 @@ function startTimer() {
   }, 1000);
 }
 
-function renderQuiz() {
+async function renderQuiz() {
   if (state.completed || state.solved >= 10) {
     state.completed = true;
     clearInterval(state.timerId);
@@ -414,7 +388,20 @@ function renderQuiz() {
     return;
   }
 
-  const quiz = quizzes[state.current % quizzes.length];
+  if (state.quizzes.length === 0) {
+    try {
+      state.quizzes = await withLoading(
+        "퀴즈 로딩 중",
+        "오늘의 문제를 불러오고 있습니다.",
+        () => apiCall('/quizzes/daily')
+      );
+    } catch (e) {
+      showToast("퀴즈를 불러오지 못했습니다.");
+      return;
+    }
+  }
+
+  const quiz = state.quizzes[state.current % state.quizzes.length];
   $("#quizHead").classList.remove("hidden");
   $("#quizProgressWrap").classList.remove("hidden");
   $("#quizCategory").textContent = `${quiz.category} · Level ${quiz.level}`;
@@ -431,56 +418,70 @@ function renderQuiz() {
   startTimer();
 }
 
-function verifyAnswer(selectedIndex) {
+async function verifyAnswer(selectedIndex) {
   if (state.locked || state.completed) return;
   state.locked = true;
   clearInterval(state.timerId);
+  $$(".option-button").forEach((button) => button.disabled = true);
 
-  const quiz = quizzes[state.current % quizzes.length];
-  const isCorrect = selectedIndex === quiz.answer;
-  const earned = isCorrect ? 10 + (quiz.level - 1) * 3 : 2;
+  const quiz = state.quizzes[state.current % state.quizzes.length];
   const selectedAnswer = selectedIndex >= 0 ? quiz.options[selectedIndex] : "시간 초과";
-  const existingAnswer = state.answers.find((answer) => answer.quizIndex === state.current);
-  if (!existingAnswer) {
-    state.answers.push({
-      quizIndex: state.current,
-      question: quiz.question,
-      selected: selectedAnswer,
-      correct: quiz.options[quiz.answer],
-      isCorrect,
-      explanation: quiz.explanation,
-      category: quiz.category
-    });
-  }
-  state.points += earned;
-  state.solved = Math.min(10, state.solved + 1);
-  if (state.solved >= 10) {
-    state.completed = true;
-  }
+  
+  try {
+    const res = await withLoading(
+      "채점 중",
+      "정답과 포인트를 확인하고 있습니다.",
+      () => apiCall('/quizzes/verify', 'POST', {
+        user_id: state.user.user_id,
+        quiz_id: quiz.quiz_id,
+        selected_idx: selectedIndex
+      })
+    );
 
-  $$(".option-button").forEach((button) => {
-    const index = Number(button.dataset.index);
-    button.disabled = true;
-    if (index === quiz.answer) button.classList.add("correct");
-    if (index === selectedIndex && !isCorrect) button.classList.add("wrong");
-  });
+    const isCorrect = res.is_correct;
+    const earned = res.earned_points;
+    state.points = res.current_total_points;
+    state.solved = res.daily_solved;
+    state.completed = res.daily_completed;
 
-  $("#quizFeedback").innerHTML = `
-    <strong>${isCorrect ? "정답입니다" : "아쉬워요"}</strong>
-    <p>${quiz.explanation} ${earned}P가 적립되었습니다.</p>
-    <button id="rewardAd" class="action-button compact" type="button">${state.completed ? "완료하기" : isCorrect ? "보상 2배 광고 보기" : "다음 문제"}</button>
-  `;
-  $("#quizFeedback").classList.remove("hidden");
-  $("#rewardAd").addEventListener("click", () => {
-    if (isCorrect) {
-      const bonus = earned * 2;
-      state.points += bonus;
-      showToast(`보상형 광고 완료: ${bonus}P 추가 적립`);
+    const existingAnswer = state.answers.find((answer) => answer.quizIndex === state.current);
+    if (!existingAnswer) {
+      state.answers.push({
+        quizIndex: state.current,
+        question: quiz.question,
+        selected: selectedAnswer,
+        correct: quiz.options[res.correct_idx],
+        isCorrect,
+        explanation: res.explanation,
+        category: quiz.category
+      });
     }
-    nextQuiz();
-  });
 
-  updateStats();
+    $$(".option-button").forEach((button) => {
+      const index = Number(button.dataset.index);
+      if (index === res.correct_idx) button.classList.add("correct");
+      if (index === selectedIndex && !isCorrect) button.classList.add("wrong");
+    });
+
+    $("#quizFeedback").innerHTML = `
+      <strong>${isCorrect ? "정답입니다" : "아쉬워요"}</strong>
+      <p>${res.explanation} ${earned}P가 적립되었습니다.</p>
+      <button id="rewardAd" class="action-button compact" type="button">${state.completed ? "완료하기" : isCorrect ? "보상 2배 광고 보기" : "다음 문제"}</button>
+    `;
+    $("#quizFeedback").classList.remove("hidden");
+    $("#rewardAd").addEventListener("click", () => {
+      if (isCorrect) {
+        showToast(`보상형 광고 완료: ${earned}P 추가 (시뮬레이션)`);
+      }
+      nextQuiz();
+    });
+
+    updateStats();
+  } catch (err) {
+    state.locked = false;
+    $$(".option-button").forEach((button) => button.disabled = false);
+    showToast(err.message || "채점 중 오류가 발생했습니다.");
+  }
 }
 
 function nextQuiz() {
@@ -489,21 +490,34 @@ function nextQuiz() {
     renderQuiz();
     return;
   }
-  state.current = (state.current + 1) % quizzes.length;
+  state.current = (state.current + 1) % state.quizzes.length;
   state.locked = false;
   renderQuiz();
 }
 
-function renderShop() {
-  $("#shopList").innerHTML = shopItems
+async function renderShop() {
+  if (state.shopItems.length === 0) {
+    try {
+      state.shopItems = await withLoading(
+        "상점 로딩 중",
+        "교환 목록을 불러오고 있습니다.",
+        () => apiCall('/rewards/items')
+      );
+    } catch (e) {
+      showToast("상점 목록을 불러오지 못했습니다.");
+      return;
+    }
+  }
+
+  $("#shopList").innerHTML = state.shopItems
     .map(
       (item) => `
         <article class="shop-item">
-          <div class="visual">${item.icon}</div>
+          <div class="visual">🎁</div>
           <strong>${item.name}</strong>
-          <p>${item.description}</p>
-          <p><b>${formatNumber(item.price)}P</b></p>
-          <button type="button" data-item="${item.id}">교환하기</button>
+          <p>금액권 교환</p>
+          <p><b>${formatNumber(item.price_points)}P</b></p>
+          <button type="button" data-item="${item.item_id}">교환하기</button>
         </article>
       `
     )
@@ -514,31 +528,45 @@ function renderShop() {
   });
 }
 
-function exchangeItem(itemId) {
-  const item = shopItems.find((entry) => entry.id === itemId);
+async function exchangeItem(itemId) {
+  const item = state.shopItems.find((entry) => entry.item_id === itemId);
   if (!item) return;
-  if (state.points < item.price) {
-    showToast("보유 포인트가 부족합니다. 오늘의 퀴즈 세트를 먼저 진행하세요.");
+  if (state.points < item.price_points) {
+    showToast("보유 포인트가 부족합니다.");
     return;
   }
-  state.points -= item.price;
-  const code = `NRCQ-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Date.now().toString().slice(-4)}`;
-  state.coupons.unshift({
-    id: `${item.id}_${Date.now()}`,
-    name: item.name,
-    code,
-    price: item.price,
-    status: "사용 가능",
-    issuedAt: new Date().toISOString().slice(0, 10)
-  });
-  updateStats();
-  showToast(`${item.name} 교환 완료. 마이페이지 쿠폰함에서 확인할 수 있습니다.`);
+  
+  try {
+    const res = await withLoading(
+      "교환 처리 중",
+      "쿠폰을 발급하고 있습니다.",
+      () => apiCall('/rewards/exchange', 'POST', {
+        user_id: state.user.user_id,
+        item_id: itemId
+      })
+    );
+    
+    state.points = res.remaining_points;
+    state.coupons.unshift(res.coupon);
+    
+    updateStats();
+    showToast(`${res.coupon.name} 교환 완료. 마이페이지 쿠폰함에서 확인할 수 있습니다.`);
+  } catch (err) {
+    showToast(err.message || "교환 처리 중 오류가 발생했습니다.");
+  }
 }
 
-function renderCoupons() {
+async function renderCoupons() {
   const list = $("#couponList");
   const count = $("#couponCount");
   if (!list || !count) return;
+
+  if (state.user) {
+    try {
+      state.coupons = await apiCall(`/coupons?user_id=${state.user.user_id}`);
+    } catch (e) {}
+  }
+
   count.textContent = `${state.coupons.length}개`;
   if (!state.coupons.length) {
     list.innerHTML = `<div class="empty-state">아직 교환한 금액권이 없습니다.</div>`;
@@ -548,9 +576,9 @@ function renderCoupons() {
     <article class="coupon-card">
       <div>
         <strong>${coupon.name}</strong>
-        <p>${coupon.issuedAt} 발급 · ${coupon.status}</p>
+        <p>${coupon.issuedAt || coupon.issued_at} 발급 · ${coupon.status}</p>
       </div>
-      <code>${coupon.code}</code>
+      <code>${coupon.coupon_code || coupon.code}</code>
     </article>
   `).join("");
 }
@@ -582,12 +610,19 @@ function renderReview() {
   `).join("");
 }
 
-function renderLockscreenSettings() {
+async function renderLockscreenSettings() {
   const enabled = $("#lockscreenEnabled");
   const reward = $("#lockscreenReward");
   if (!enabled || !reward) return;
+
+  if (state.user) {
+    try {
+      state.lockscreen = await apiCall(`/settings/lockscreen?user_id=${state.user.user_id}`);
+    } catch (e) {}
+  }
+
   enabled.checked = state.lockscreen.enabled;
-  reward.checked = state.lockscreen.rewardPrompt;
+  reward.checked = state.lockscreen.reward_prompt ?? state.lockscreen.rewardPrompt ?? true;
   syncNativeLockscreenSettings();
 }
 
@@ -603,7 +638,7 @@ function bindEvents() {
       }
       return;
     }
-    completeGoogleStep({
+    continueGoogleLogin({
       provider: "google",
       googleSub: `browser-google-${Date.now()}`,
       email: "",
@@ -623,35 +658,17 @@ function bindEvents() {
       showToast("닉네임을 입력해 주세요.");
       return;
     }
+    
     const submitButton = event.submitter || $("#loginForm button[type='submit']");
     setButtonBusy(submitButton, true, "로그인 중");
     try {
       const res = await withLoading(
         "로그인 중",
         "계정 정보를 확인하고 있습니다.",
-        () => apiCall("/auth/google-login", "POST", {
-          google_sub: pendingGoogleUser.googleSub,
-          email: pendingGoogleUser.email || "",
-          nickname,
-          id_token: pendingGoogleUser.idToken || pendingGoogleUser.id_token || ""
-        })
+        () => loginWithGoogleUser(pendingGoogleUser, nickname)
       );
-
-      state.user = {
-        provider: "google",
-        googleSub: pendingGoogleUser.googleSub,
-        email: pendingGoogleUser.email || "",
-        nickname: res.nickname,
-        user_id: res.user_id,
-        access_token: res.access_token,
-        total_points: res.total_points,
-        loggedInAt: new Date().toISOString()
-      };
-      state.points = res.total_points;
-      localStorage.setItem("nrc_user_profile", JSON.stringify(state.user));
-      showApp();
-      renderProfile();
-      updateOsRuntime();
+      
+      applyLoginResponse(res, pendingGoogleUser);
       showToast("로그인되었습니다.");
     } catch (err) {
       showToast(err.message || "로그인 처리 중 오류가 발생했습니다.");
@@ -695,21 +712,7 @@ function bindEvents() {
     showToast(state.lockscreen.rewardPrompt ? "보상 안내가 켜졌습니다." : "보상 안내가 꺼졌습니다.");
   });
 
-  $("#openOverlaySettings").addEventListener("click", () => {
-    if (window.NRCBridge?.openOverlaySettings) {
-      window.NRCBridge.openOverlaySettings();
-    } else {
-      showToast("Android 앱에서 설치하면 잠금화면 권한 설정으로 이동합니다.");
-    }
-  });
 
-  $("#openAppSettings").addEventListener("click", () => {
-    if (window.NRCBridge?.openAppSettings) {
-      window.NRCBridge.openAppSettings();
-    } else {
-      showToast("Android 앱에서 설치하면 앱 권한 설정으로 이동합니다.");
-    }
-  });
 
   $$("[data-view-target]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -721,28 +724,22 @@ function bindEvents() {
   window.addEventListener("hashchange", () => switchView(routeFromHash()));
 }
 
-function updateOsRuntime() {
-  const runtime = $("#osRuntime");
-  if (!runtime) return;
-  if (window.NRCBridge?.runtime) {
-    runtime.textContent = window.NRCBridge.runtime();
-  } else {
-    runtime.textContent = "브라우저 미리보기";
-  }
-}
 
-function init() {
+
+async function init() {
   bindEvents();
-  renderShop();
-  renderCoupons();
-  renderLockscreenSettings();
   if (hasLogin()) {
     showApp();
+    await Promise.all([
+      renderShop(),
+      renderCoupons(),
+      renderLockscreenSettings()
+    ]);
     switchView(routeFromHash());
   } else {
     showLogin();
+    renderShop();
   }
-  updateOsRuntime();
   updateStats();
 
   if ("serviceWorker" in navigator && location.protocol !== "file:") {

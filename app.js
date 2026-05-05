@@ -155,6 +155,84 @@ function completeGoogleStep(googleUser) {
   $("#loginName").focus();
 }
 
+function applyLoginResponse(res, googleUser) {
+  state.user = {
+    provider: "google",
+    googleSub: res.google_sub || googleUser.googleSub,
+    email: res.email || googleUser.email || "",
+    nickname: res.nickname,
+    user_id: res.user_id,
+    access_token: res.access_token,
+    total_points: res.total_points,
+    loggedInAt: new Date().toISOString()
+  };
+  state.points = res.total_points;
+
+  // 서버 기준 오늘 진행도로 동기화 (기존 계정 재로그인 시 복원)
+  if (typeof res.daily_solved === "number") {
+    state.solved = res.daily_solved;
+    state.current = res.daily_solved;
+    state.completed = Boolean(res.daily_completed);
+    localStorage.setItem("nrc_daily_quiz", JSON.stringify({
+      date: todayKey,
+      solved: state.solved,
+      current: state.current,
+      completed: state.completed,
+      answers: state.answers
+    }));
+  }
+
+  localStorage.setItem("nrc_user_profile", JSON.stringify(state.user));
+  pendingGoogleUser = null;
+  $("#googleLoginButton").classList.remove("hidden");
+  $("#loginForm").classList.add("hidden");
+  $("#loginName").value = "";
+  showApp();
+  renderProfile();
+  updateStats();
+}
+
+async function loginWithGoogleUser(googleUser, nickname = "") {
+  const res = await fetch(`${API_BASE}/auth/google-login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      google_sub: googleUser.googleSub,
+      email: googleUser.email || "",
+      nickname,
+      id_token: googleUser.idToken || googleUser.id_token || ""
+    })
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "API Error" }));
+    const apiError = new Error(error.detail || "Google login failed.");
+    apiError.status = res.status;
+    apiError.detail = error.detail;
+    throw apiError;
+  }
+  return res.json();
+}
+
+async function continueGoogleLogin(googleUser) {
+  setButtonBusy($("#googleLoginButton"), true, "로그인 중");
+  try {
+    const res = await withLoading(
+      "로그인 중",
+      "DB에 저장된 계정 정보를 확인하고 있습니다.",
+      () => loginWithGoogleUser(googleUser)
+    );
+    applyLoginResponse(res, googleUser);
+    showToast("로그인되었습니다.");
+  } catch (err) {
+    if (err.status === 409 && err.detail === "nickname required") {
+      completeGoogleStep(googleUser);
+      return;
+    }
+    setButtonBusy($("#googleLoginButton"), false);
+    showToast(err.message || "로그인 처리 중 오류가 발생했습니다.");
+  }
+}
+
 function normalizeNativeGooglePayload(payload) {
   if (!payload) return null;
   if (typeof payload === "string") {
@@ -179,7 +257,7 @@ window.onNativeGoogleSignIn = (payload) => {
     showToast("Google 로그인 정보를 확인하지 못했습니다.");
     return;
   }
-  completeGoogleStep(googleUser);
+  continueGoogleLogin(googleUser);
 };
 
 window.onNativeGoogleSignInError = (message) => {
@@ -560,7 +638,7 @@ function bindEvents() {
       }
       return;
     }
-    completeGoogleStep({
+    continueGoogleLogin({
       provider: "google",
       googleSub: `browser-google-${Date.now()}`,
       email: "",
@@ -587,29 +665,10 @@ function bindEvents() {
       const res = await withLoading(
         "로그인 중",
         "계정 정보를 확인하고 있습니다.",
-        () => apiCall('/auth/google-login', 'POST', {
-          google_sub: pendingGoogleUser.googleSub,
-          email: pendingGoogleUser.email || "",
-          nickname: nickname,
-          id_token: pendingGoogleUser.idToken || pendingGoogleUser.id_token || ""
-        })
+        () => loginWithGoogleUser(pendingGoogleUser, nickname)
       );
       
-      state.user = {
-        provider: "google",
-        googleSub: pendingGoogleUser.googleSub,
-        email: pendingGoogleUser.email || "",
-        nickname: res.nickname,
-        user_id: res.user_id,
-        access_token: res.access_token,
-        total_points: res.total_points,
-        loggedInAt: new Date().toISOString()
-      };
-      state.points = res.total_points;
-      localStorage.setItem("nrc_user_profile", JSON.stringify(state.user));
-      showApp();
-      renderProfile();
-      updateStats();
+      applyLoginResponse(res, pendingGoogleUser);
       showToast("로그인되었습니다.");
     } catch (err) {
       showToast(err.message || "로그인 처리 중 오류가 발생했습니다.");

@@ -270,6 +270,17 @@ def device_login(payload: DeviceLoginRequest):
     return {"access_token": f"dev-token-{user['user_id']}", "user_id": user["user_id"], "total_points": user.get("total_points", 0)}
 
 
+def daily_progress_for_user(user_id: str) -> dict:
+    today = datetime.date.today().isoformat()
+    solved_count = sum(
+        1 for _ in firestore_db.collection("solved_logs")
+        .where("user_id", "==", user_id)
+        .where("solved_date", "==", today)
+        .stream()
+    )
+    return {"daily_solved": solved_count, "daily_completed": solved_count >= 10}
+
+
 @app.post("/v1/auth/google-login")
 def google_login(payload: GoogleLoginRequest):
     google_sub = payload.google_sub
@@ -285,14 +296,15 @@ def google_login(payload: GoogleLoginRequest):
 
     user = find_one("users", "google_sub", google_sub)
     if user:
-        return {**auth_response(user), "is_new_user": False}
+        progress = daily_progress_for_user(user["user_id"])
+        return {**auth_response(user), "is_new_user": False, **progress}
 
     nickname = (payload.nickname or "").strip()
     if not nickname:
         raise HTTPException(status_code=409, detail="nickname required", headers={"X-NRC-Needs-Profile": "true"})
 
     user = create_user(device_uuid=f"google:{google_sub}", auth_provider="google", google_sub=google_sub, email=email, nickname=nickname)
-    return {**auth_response(user), "is_new_user": True}
+    return {**auth_response(user), "is_new_user": True, "daily_solved": 0, "daily_completed": False}
 
 
 @app.get("/v1/quizzes/daily")
