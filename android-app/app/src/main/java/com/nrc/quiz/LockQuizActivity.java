@@ -12,6 +12,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.TypedValue;
 import android.provider.MediaStore;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -205,6 +206,13 @@ public class LockQuizActivity extends Activity {
 
         wordView = text("", Color.WHITE, 48, Typeface.BOLD);
         wordView.setPadding(dp(16), 0, dp(16), 0);
+        wordView.setSingleLine(true);
+        wordView.setGravity(Gravity.CENTER);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            wordView.setAutoSizeTextTypeUniformWithConfiguration(
+                12, 48, 2, TypedValue.COMPLEX_UNIT_SP
+            );
+        }
         wordRow.addView(wordView, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
 
         TextView next = roundIcon("›", 28);
