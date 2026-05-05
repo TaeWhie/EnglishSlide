@@ -57,7 +57,7 @@ class DeviceLoginRequest(BaseModel):
 class GoogleLoginRequest(BaseModel):
     google_sub: Optional[str] = None
     email: Optional[str] = None
-    nickname: str
+    nickname: Optional[str] = None
     id_token: Optional[str] = None
 
 
@@ -150,6 +150,8 @@ def auth_response(user):
         "access_token": f"dev-token-{user['user_id']}",
         "user_id": user["user_id"],
         "nickname": user.get("nickname"),
+        "email": user.get("email"),
+        "google_sub": user.get("google_sub"),
         "total_points": user.get("total_points", 0),
     }
 
@@ -174,10 +176,6 @@ def device_login(payload: DeviceLoginRequest):
 
 @app.post("/v1/auth/google-login")
 def google_login(payload: GoogleLoginRequest):
-    nickname = payload.nickname.strip()
-    if not nickname:
-        raise HTTPException(status_code=400, detail="nickname required")
-
     google_sub = payload.google_sub
     email = payload.email
     if payload.id_token:
@@ -190,13 +188,15 @@ def google_login(payload: GoogleLoginRequest):
         raise HTTPException(status_code=400, detail="google_sub required")
 
     user = find_one("users", "google_sub", google_sub)
-    if not user:
-        user = create_user(device_uuid=f"google:{google_sub}", auth_provider="google", google_sub=google_sub, email=email, nickname=nickname)
-    else:
-        user["email"] = email
-        user["nickname"] = nickname
-        user_ref(user["user_id"]).update({"email": email, "nickname": nickname})
-    return auth_response(user)
+    if user:
+        return {**auth_response(user), "is_new_user": False}
+
+    nickname = (payload.nickname or "").strip()
+    if not nickname:
+        raise HTTPException(status_code=409, detail="nickname required", headers={"X-NRC-Needs-Profile": "true"})
+
+    user = create_user(device_uuid=f"google:{google_sub}", auth_provider="google", google_sub=google_sub, email=email, nickname=nickname)
+    return {**auth_response(user), "is_new_user": True}
 
 
 @app.get("/v1/quizzes/daily")
