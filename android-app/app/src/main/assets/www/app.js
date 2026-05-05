@@ -303,9 +303,9 @@ function updateGoalSummary() {
 function updateQuizEntryState() {
   const startButton = $("#startQuiz");
   if (!startButton) return;
-  startButton.disabled = state.completed;
-  startButton.textContent = state.completed ? "오늘 완료" : "도전하기";
-  startButton.classList.toggle("disabled", state.completed);
+  startButton.disabled = false;
+  startButton.textContent = "도전하기 (무제한)";
+  startButton.classList.remove("disabled");
 }
 
 function showToast(message) {
@@ -374,7 +374,7 @@ function startTimer() {
 }
 
 async function renderQuiz() {
-  if (state.completed || state.solved >= 10) {
+  if (false) { // 무제한 풀기 허용
     state.completed = true;
     clearInterval(state.timerId);
     $("#quizHead").classList.add("hidden");
@@ -419,7 +419,7 @@ async function renderQuiz() {
 }
 
 async function verifyAnswer(selectedIndex) {
-  if (state.locked || state.completed) return;
+  if (state.locked) return;
   state.locked = true;
   clearInterval(state.timerId);
   $$(".option-button").forEach((button) => button.disabled = true);
@@ -465,8 +465,8 @@ async function verifyAnswer(selectedIndex) {
 
     $("#quizFeedback").innerHTML = `
       <strong>${isCorrect ? "정답입니다" : "아쉬워요"}</strong>
-      <p>${res.explanation} ${earned}P가 적립되었습니다.</p>
-      <button id="rewardAd" class="action-button compact" type="button">${state.completed ? "완료하기" : isCorrect ? "보상 2배 광고 보기" : "다음 문제"}</button>
+      <p>${isCorrect ? (earned === 0 ? res.explanation + " (일일 최대 100P 한도 도달)" : res.explanation + " " + earned + "P 적립") : res.explanation}</p>
+      <button id="rewardAd" class="action-button compact" type="button">다음 문제</button>
     `;
     $("#quizFeedback").classList.remove("hidden");
     $("#rewardAd").addEventListener("click", () => {

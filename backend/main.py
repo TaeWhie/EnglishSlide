@@ -321,19 +321,43 @@ def verify_quiz(payload: QuizVerifyRequest):
     if not user_doc.exists:
         raise HTTPException(status_code=404, detail="user not found")
 
-    solved_count = sum(1 for _ in firestore_db.collection("solved_logs").where("user_id", "==", payload.user_id).where("solved_date", "==", today).stream())
-    if solved_count >= 10:
-        raise HTTPException(status_code=403, detail="daily quiz already completed")
-
+    # 1. 일일 퀴즈 횟수 제한 제거 (무제한 풀기 허용)
+    # solved_count = sum(1 for _ in firestore_db.collection("solved_logs").where("user_id", "==", payload.user_id).where("solved_date", "==", today).stream())
+    
     quiz = quiz_by_id(payload.quiz_id)
     if not quiz:
         raise HTTPException(status_code=404, detail="quiz not found")
 
-    solved_id = f"{payload.user_id}_{payload.quiz_id}_{today}"
-    if firestore_db.collection("solved_logs").document(solved_id).get().exists:
-        raise HTTPException(status_code=403, detail="quiz already solved")
-
     is_correct = payload.selected_idx == quiz["_correct_idx"]
+    earned_points = 0
+
+    if is_correct:
+        # 오늘 얻은 퀴즈 리워드 총합 계산
+        today_logs = firestore_db.collection("point_logs") \
+            .where("user_id", "==", payload.user_id) \
+            .where("reason", "==", "quiz_reward") \
+            .where("ref_id", "==", today) \
+            .stream()
+        today_earned = sum(log.to_dict().get("amount", 0) for log in today_logs)
+
+        # 일일 리워드 한도 (예: 최대 100P, 문제당 10P)
+        if today_earned < 100:
+            earned_points = 10
+            # 포인트 지급
+            new_total = int(user_doc.to_dict().get("total_points", 0)) + earned_points
+            user_ref(payload.user_id).update({"total_points": new_total})
+            firestore_db.collection("point_logs").add({
+                "user_id": payload.user_id,
+                "amount": earned_points,
+                "reason": "quiz_reward",
+                "ref_id": today,
+                "created_at": now
+            })
+            # Reload user_doc for updated points
+            user_doc = user_ref(payload.user_id).get()
+
+    # 중복 풀이를 허용하기 위해 고유한 ID(UUID) 사용
+    solved_id = f"{payload.user_id}_{payload.quiz_id}_{today}_{uuid4().hex[:8]}"
     firestore_db.collection("solved_logs").document(solved_id).set({
         "user_id": payload.user_id,
         "quiz_id": payload.quiz_id,
@@ -343,17 +367,21 @@ def verify_quiz(payload: QuizVerifyRequest):
         "selected_idx": payload.selected_idx,
         "correct_idx": quiz["_correct_idx"],
         "is_correct": is_correct,
-        "earned_points": 0,
+        "earned_points": earned_points,
         "created_at": now,
     })
+    
     total_points = int(user_doc.to_dict().get("total_points", 0))
+    # 전체 푼 횟수를 위해 다시 세기
+    solved_count = sum(1 for _ in firestore_db.collection("solved_logs").where("user_id", "==", payload.user_id).where("solved_date", "==", today).stream())
+    
     return {
         "is_correct": is_correct,
         "correct_idx": quiz["_correct_idx"],
-        "earned_points": 0,
+        "earned_points": earned_points,
         "current_total_points": total_points,
-        "daily_solved": solved_count + 1,
-        "daily_completed": (solved_count + 1) >= 10,
+        "daily_solved": solved_count,
+        "daily_completed": solved_count >= 10,
         "explanation": quiz["explanation"],
         "english": quiz["english"],
         "korean": quiz["korean"],
