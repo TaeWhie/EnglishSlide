@@ -205,12 +205,13 @@ public class LockQuizActivity extends Activity {
         wordRow.addView(prev, new LinearLayout.LayoutParams(dp(44), dp(44)));
 
         wordView = text("", Color.WHITE, 48, Typeface.BOLD);
-        wordView.setPadding(dp(16), 0, dp(16), 0);
-        wordView.setSingleLine(true);
+        wordView.setPadding(dp(8), 0, dp(8), 0); // 좌우 패딩을 조금 줄여 공간 확보
+        wordView.setMaxLines(1);
         wordView.setGravity(Gravity.CENTER);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // 최소 크기를 10sp로 낮추어 더 유연하게 조절되도록 함
             wordView.setAutoSizeTextTypeUniformWithConfiguration(
-                12, 48, 2, TypedValue.COMPLEX_UNIT_SP
+                10, 48, 1, TypedValue.COMPLEX_UNIT_SP
             );
         }
         wordRow.addView(wordView, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));

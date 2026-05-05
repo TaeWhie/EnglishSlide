@@ -94,7 +94,17 @@
           </section>
         </section>
 
+        
         <section id="quizView" class="view quiz-view" data-title="퀴즈">
+          <div id="quizModeSelect" class="mode-select-panel">
+            <p class="eyebrow">Selection</p>
+            <h3>학습 모드 선택</h3>
+            <p>오늘 학습할 방식을 골라주세요.</p>
+            <div class="mode-buttons" style="display: flex; flex-direction: column; gap: 12px; margin-top: 24px;">
+              <button class="action-button mode-btn" data-mode="kor">영한 퀴즈 시작 (English → 한국어)</button>
+              <button class="action-button outline mode-btn" data-mode="eng">영영 퀴즈 시작 (English → English)</button>
+            </div>
+          </div>
           <div id="quizHead" class="quiz-head">
             <div>
               <p class="eyebrow" id="quizCategory">Life English</p>

@@ -428,6 +428,7 @@ async function renderQuiz() {
     clearInterval(state.timerId);
     $("#quizHead").classList.add("hidden");
     $("#quizProgressWrap").classList.add("hidden");
+    $("#quizModeSelect")?.classList.add("hidden");
     $("#optionList").innerHTML = "";
     $("#quizFeedback").classList.add("hidden");
     $("#quizComplete").classList.remove("hidden");
@@ -438,6 +439,14 @@ async function renderQuiz() {
   }
 
   if (state.quizzes.length === 0) {
+    $("#quizHead").classList.add("hidden");
+    $("#quizProgressWrap").classList.add("hidden");
+    $("#quizComplete").classList.add("hidden");
+    $("#reviewPanel").classList.add("hidden");
+    $("#quizModeSelect")?.classList.remove("hidden");
+    return;
+  }
+  $("#quizModeSelect")?.classList.add("hidden"); {
     try {
       state.quizzes = await withLoading(
         "퀴즈 로딩 중",
@@ -851,3 +860,16 @@ async function init() {
 }
 
 init();
+
+async function fetchQuizzesAndStart() {
+  try {
+    state.quizzes = await withLoading(
+      "퀴즈 로딩 중",
+      "문제를 생성하고 있습니다.",
+      () => apiCall(`/quizzes/daily?mode=${state.quizMode}`)
+    );
+    renderQuiz();
+  } catch (e) {
+    showToast("퀴즈를 불러오지 못했습니다.");
+  }
+}

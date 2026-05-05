@@ -1005,3 +1005,6 @@ h1 {
     font-size: 20px;
   }
 }
+
+.mode-select-panel { display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 40px 24px; text-align: center; min-height: 400px; } .mode-select-panel h3 { font-size: 24px; margin: 12px 0; } .mode-btn { padding: 16px 24px !important; font-size: 16px !important; font-weight: 700 !important; border-radius: 12px !important; }
+
