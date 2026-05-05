@@ -157,7 +157,8 @@ async function renderQuiz() {
     return;
   }
 
-  if (!state.quizzes || state.quizzes.length === 0) {
+  if (!Array.isArray(state.quizzes) || state.quizzes.length === 0) {
+    console.log("No quizzes found, showing selection screen.");
     $("#quizHead").classList.add("hidden");
     $("#quizProgressWrap").classList.add("hidden");
     $("#quizComplete").classList.add("hidden");
