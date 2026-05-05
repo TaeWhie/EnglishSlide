@@ -19,6 +19,7 @@ FIREBASE_SERVICE_ACCOUNT_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "")
 FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
 ALLOW_UNVERIFIED_GOOGLE_LOGIN = os.getenv("ALLOW_UNVERIFIED_GOOGLE_LOGIN", "").lower() in ("1", "true", "yes")
 WORDS_PATH = os.path.join(os.path.dirname(__file__), "data", "words.json")
+DAILY_QUIZ_REWARD_MAX_POINTS = 1000
 
 QUIZZES = [
     (1, "다음 중 '혜택'이라는 뜻을 가진 단어는?", '["Benefit", "Battery", "Balance", "Banner"]', 0, "Life English", 1, "Benefit은 혜택이나 이익을 뜻합니다."),
@@ -67,6 +68,11 @@ class QuizVerifyRequest(BaseModel):
     user_id: str
     quiz_id: str
     selected_idx: int
+
+
+class QuizRewardRequest(BaseModel):
+    user_id: str
+    ad_token: Optional[str] = None
 
 
 class RewardExchangeRequest(BaseModel):
@@ -290,11 +296,7 @@ def verify_quiz(payload: QuizVerifyRequest):
     if firestore_db.collection("solved_logs").document(solved_id).get().exists:
         raise HTTPException(status_code=403, detail="quiz already solved")
 
-    user = user_doc.to_dict()
     is_correct = payload.selected_idx == quiz["_correct_idx"]
-    earned = 10 + (quiz["level"] - 1) * 3 if is_correct else 2
-    total_points = int(user.get("total_points", 0)) + earned
-    user_ref(payload.user_id).update({"total_points": total_points})
     firestore_db.collection("solved_logs").document(solved_id).set({
         "user_id": payload.user_id,
         "quiz_id": payload.quiz_id,
@@ -304,20 +306,78 @@ def verify_quiz(payload: QuizVerifyRequest):
         "selected_idx": payload.selected_idx,
         "correct_idx": quiz["_correct_idx"],
         "is_correct": is_correct,
-        "earned_points": earned,
+        "earned_points": 0,
         "created_at": now,
     })
-    firestore_db.collection("point_logs").add({"user_id": payload.user_id, "amount": earned, "reason": "quiz", "ref_id": str(payload.quiz_id), "created_at": now})
+    total_points = int(user_doc.to_dict().get("total_points", 0))
     return {
         "is_correct": is_correct,
         "correct_idx": quiz["_correct_idx"],
-        "earned_points": earned,
+        "earned_points": 0,
         "current_total_points": total_points,
         "daily_solved": solved_count + 1,
         "daily_completed": (solved_count + 1) >= 10,
         "explanation": quiz["explanation"],
         "english": quiz["english"],
         "korean": quiz["korean"],
+    }
+
+
+@app.post("/v1/quizzes/reward")
+def claim_quiz_reward(payload: QuizRewardRequest):
+    today = datetime.date.today().isoformat()
+    now = now_iso()
+    user_doc = user_ref(payload.user_id).get()
+    if not user_doc.exists:
+        raise HTTPException(status_code=404, detail="user not found")
+
+    solved_logs = [
+        doc.to_dict()
+        for doc in firestore_db.collection("solved_logs")
+        .where("user_id", "==", payload.user_id)
+        .where("solved_date", "==", today)
+        .stream()
+    ]
+    solved_count = len(solved_logs)
+    if solved_count < 10:
+        raise HTTPException(status_code=400, detail="daily quiz not completed")
+
+    reward_id = f"{payload.user_id}_{today}_daily_quiz_reward"
+    reward_ref = firestore_db.collection("point_logs").document(reward_id)
+    existing_reward = reward_ref.get()
+    if existing_reward.exists:
+        reward = existing_reward.to_dict()
+        return {
+            "already_claimed": True,
+            "reward_points": int(reward.get("amount", 0)),
+            "reward_percent": int(reward.get("reward_percent", 0)),
+            "correct_count": int(reward.get("correct_count", 0)),
+            "current_total_points": int(user_doc.to_dict().get("total_points", 0)),
+        }
+
+    correct_count = sum(1 for log in solved_logs if log.get("is_correct"))
+    reward_percent = min(100, max(0, correct_count * 10))
+    reward_points = int(DAILY_QUIZ_REWARD_MAX_POINTS * reward_percent / 100)
+    current_points = int(user_doc.to_dict().get("total_points", 0))
+    total_points = current_points + reward_points
+    user_ref(payload.user_id).update({"total_points": total_points})
+    reward_ref.set({
+        "user_id": payload.user_id,
+        "amount": reward_points,
+        "reason": "daily_quiz_reward",
+        "ref_id": today,
+        "correct_count": correct_count,
+        "solved_count": solved_count,
+        "reward_percent": reward_percent,
+        "ad_token": payload.ad_token,
+        "created_at": now,
+    })
+    return {
+        "already_claimed": False,
+        "reward_points": reward_points,
+        "reward_percent": reward_percent,
+        "correct_count": correct_count,
+        "current_total_points": total_points,
     }
 
 
