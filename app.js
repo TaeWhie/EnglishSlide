@@ -762,9 +762,15 @@ function bindEvents() {
     showToast("로그아웃되었습니다.");
   });
 
-  $(".nav-item").forEach((item) => item.addEventListener("click", () => {
-    switchView(item.dataset.view);
-    syncRoute(item.dataset.view);
+  $$(".nav-item").forEach((item) => item.addEventListener("click", () => {
+    const targetView = item.dataset.view;
+    if (targetView === "quizView") {
+      state.quizzes = [];
+      clearInterval(state.timerId);
+      state.locked = false;
+    }
+    switchView(targetView);
+    syncRoute(targetView);
   }));
 
   // 홈 화면 모드 선택 버튼
