@@ -468,7 +468,7 @@ async function renderQuiz() {
     .map((option, index) => `<button class="option-button" type="button" data-index="${index}">${String.fromCharCode(65 + index)}. ${option}</button>`)
     .join("");
     
-  $(".option-button").forEach((button) => {
+  $$(".option-button").forEach((button) => {
     button.addEventListener("click", () => verifyAnswer(Number(button.dataset.index)));
   });
   startTimer();
@@ -803,7 +803,7 @@ function bindEvents() {
   });
 
   // 퀴즈 탭 내부 모드 선택 버튼
-  $(".mode-btn").forEach(btn => {
+  $$(".mode-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       state.quizMode = btn.dataset.mode;
       fetchQuizzesAndStart();
