@@ -100,6 +100,10 @@ function switchView(viewId) {
   $$(".view").forEach((view) => view.classList.toggle("active", view.id === viewId));
   $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === viewId));
   if (viewId === "quizView") {
+    // 퀴즈 탭 진입 시 혹시라도 quizzes가 남아있다면 초기화 (안전장치)
+    if (!state.quizModeSelected) {
+       // state.quizzes = []; // 이 부분은 nav click에서 이미 처리함
+    }
     renderQuiz();
   } else if (viewId === "reportView") {
     renderCoupons();
@@ -418,6 +422,12 @@ function bindEvents() {
 }
 
 async function init() {
+  // 캐시 문제 방지를 위해 기존 서비스 워커 해제
+  if (window.navigator.serviceWorker) {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    for (let reg of registrations) { await reg.unregister(); }
+  }
+
   bindEvents();
   if (hasLogin()) {
     showApp();
