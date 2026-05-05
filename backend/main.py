@@ -110,6 +110,25 @@ def load_words():
 
 
 WORDS = load_words()
+UNIT_ROTATION_START_DATE = datetime.date(2026, 5, 5)
+
+
+def max_word_unit() -> int:
+    return max(int(word.get("unit", 1)) for word in WORDS)
+
+
+def unit_for_date(quiz_date: str) -> int:
+    try:
+        date_value = datetime.date.fromisoformat(quiz_date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid quiz date")
+    max_unit = max_word_unit()
+    day_offset = (date_value - UNIT_ROTATION_START_DATE).days
+    return (day_offset % max_unit) + 1
+
+
+def words_for_unit(unit: int):
+    return [word for word in WORDS if int(word.get("unit", 1)) == unit]
 
 
 def quiz_mode_label(mode: str) -> str:
@@ -154,8 +173,12 @@ def build_word_quiz(word: dict, mode: str, quiz_date: str):
 def daily_word_quizzes(mode: str, quiz_date: str):
     if mode not in ("eng", "kor"):
         raise HTTPException(status_code=400, detail="invalid quiz mode")
-    rng = random.Random(f"{quiz_date}:{mode}:daily")
-    picked = rng.sample(WORDS, 10)
+    unit = unit_for_date(quiz_date)
+    unit_words = words_for_unit(unit)
+    if len(unit_words) < 4:
+        raise HTTPException(status_code=500, detail="not enough words for daily unit")
+    rng = random.Random(f"{quiz_date}:{mode}:daily:unit:{unit}")
+    picked = rng.sample(unit_words, min(10, len(unit_words)))
     return [build_word_quiz(word, mode, quiz_date) for word in picked]
 
 
@@ -171,6 +194,8 @@ def quiz_by_id(quiz_id: str):
         raise HTTPException(status_code=404, detail="quiz not found")
     word = next((entry for entry in WORDS if int(entry["id"]) == word_id), None)
     if not word:
+        raise HTTPException(status_code=404, detail="quiz not found")
+    if int(word.get("unit", 1)) != unit_for_date(quiz_date):
         raise HTTPException(status_code=404, detail="quiz not found")
     return build_word_quiz(word, mode, quiz_date)
 
