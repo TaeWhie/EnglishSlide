@@ -152,7 +152,6 @@ public class LockQuizActivity extends Activity {
     private View buildContent() {
         FrameLayout root = new FrameLayout(this);
         root.setBackground(lockBackground());
-        root.setPadding(dp(22), dp(40), dp(22), dp(28));
 
         // 전체 화면 스와이프 감지
         root.setOnTouchListener((v, event) -> {
@@ -163,69 +162,82 @@ public class LockQuizActivity extends Activity {
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setGravity(Gravity.CENTER_HORIZONTAL);
-        // content는 터치를 root로 전달
-        content.setOnTouchListener((v, event) -> {
-            handleSwipeGesture(event);
-            return false;
-        });
+        content.setPadding(dp(24), dp(60), dp(24), dp(40));
 
-        timeView = text("", Color.WHITE, 64, Typeface.NORMAL);
+        // 1. 시계 영역 (최신 스타일 - 크고 얇게)
+        timeView = text("", Color.WHITE, 82, Typeface.NORMAL);
         timeView.setIncludeFontPadding(false);
+        timeView.setAlpha(0.95f);
         content.addView(timeView, matchWrap());
 
-        dateView = text("", Color.argb(220, 255, 255, 255), 16, Typeface.BOLD);
-        dateView.setPadding(0, dp(8), 0, 0);
+        dateView = text("", Color.argb(200, 255, 255, 255), 18, Typeface.NORMAL);
+        dateView.setPadding(0, dp(4), 0, 0);
         content.addView(dateView, matchWrap());
 
+        // 상단 공간 확보
         View spacerTop = new View(this);
-        content.addView(spacerTop, new LinearLayout.LayoutParams(1, 0, 1.15f));
+        content.addView(spacerTop, new LinearLayout.LayoutParams(1, 0, 1.2f));
 
-        counterView = text("", Color.argb(215, 255, 255, 255), 14, Typeface.BOLD);
-        counterView.setBackground(pill(Color.argb(38, 255, 255, 255), Color.argb(55, 255, 255, 255)));
-        counterView.setPadding(dp(16), dp(8), dp(16), dp(8));
-        content.addView(counterView, wrapWrap());
+        // 2. 단어 카드 영역 (Glassmorphism 적용)
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setGravity(Gravity.CENTER_HORIZONTAL);
+        card.setPadding(dp(24), dp(32), dp(24), dp(32));
+        card.setBackground(rounded(Color.argb(35, 255, 255, 255), dp(32)));
+        
+        // 카드 테두리 (Stroke) 추가
+        GradientDrawable cardBg = (GradientDrawable) card.getBackground();
+        cardBg.setStroke(dp(1), Color.argb(50, 255, 255, 255));
+
+        counterView = text("", Color.argb(200, 255, 255, 255), 13, Typeface.BOLD);
+        counterView.setPadding(dp(12), dp(4), dp(12), dp(4));
+        counterView.setBackground(pill(Color.argb(30, 255, 255, 255), Color.argb(0, 0, 0, 0)));
+        card.addView(counterView, wrapWrap());
 
         LinearLayout wordRow = new LinearLayout(this);
         wordRow.setGravity(Gravity.CENTER);
         wordRow.setOrientation(LinearLayout.HORIZONTAL);
-        wordRow.setPadding(0, dp(18), 0, dp(4));
+        wordRow.setPadding(0, dp(20), 0, dp(8));
 
-        TextView prev = roundIcon("‹", 34);
+        TextView prev = roundIcon("‹", 28);
         prev.setOnClickListener(v -> moveWord(-1));
-        wordRow.addView(prev, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        wordRow.addView(prev, new LinearLayout.LayoutParams(dp(44), dp(44)));
 
-        wordView = text("", Color.WHITE, 44, Typeface.BOLD);
-        wordView.setSingleLine(false);
-        wordView.setPadding(dp(14), 0, dp(14), 0);
+        wordView = text("", Color.WHITE, 48, Typeface.BOLD);
+        wordView.setPadding(dp(16), 0, dp(16), 0);
         wordRow.addView(wordView, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
 
-        TextView next = roundIcon("›", 34);
+        TextView next = roundIcon("›", 28);
         next.setOnClickListener(v -> moveWord(1));
-        wordRow.addView(next, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        content.addView(wordRow, matchWrap());
+        wordRow.addView(next, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        card.addView(wordRow, matchWrap());
 
-        metaView = text("", Color.argb(210, 255, 255, 255), 15, Typeface.BOLD);
-        content.addView(metaView, matchWrap());
+        metaView = text("", Color.argb(180, 255, 255, 255), 16, Typeface.NORMAL);
+        card.addView(metaView, matchWrap());
 
-        meaningView = text("", Color.rgb(24, 34, 52), 20, Typeface.BOLD);
+        meaningView = text("", Color.rgb(255, 255, 255), 22, Typeface.BOLD);
         meaningView.setGravity(Gravity.CENTER);
-        meaningView.setPadding(dp(20), dp(18), dp(20), dp(18));
-        meaningView.setBackground(rounded(Color.argb(238, 255, 255, 255), dp(24)));
+        meaningView.setPadding(dp(16), dp(16), dp(16), dp(16));
+        meaningView.setBackground(rounded(Color.argb(40, 255, 255, 255), dp(16)));
         meaningView.setOnClickListener(v -> toggleMeaning());
         LinearLayout.LayoutParams meaningParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
-        meaningParams.setMargins(0, dp(24), 0, dp(8));
-        content.addView(meaningView, meaningParams);
+        meaningParams.setMargins(0, dp(24), 0, 0);
+        card.addView(meaningView, meaningParams);
 
-        TextView meaningHint = text("뜻을 누르면 영어 뜻으로 바뀝니다", Color.argb(205, 255, 255, 255), 13, Typeface.NORMAL);
-        meaningHint.setPadding(0, dp(3), 0, 0);
-        content.addView(meaningHint, matchWrap());
+        TextView meaningHint = text("터치하여 뜻 확인", Color.argb(140, 255, 255, 255), 12, Typeface.NORMAL);
+        meaningHint.setPadding(0, dp(8), 0, 0);
+        card.addView(meaningHint, matchWrap());
 
+        content.addView(card, matchWrap());
+
+        // 하단 공간 확보
         View spacerBottom = new View(this);
         content.addView(spacerBottom, new LinearLayout.LayoutParams(1, 0, 1f));
 
+        // 3. 하단 슬라이드 힌트 영역
         content.addView(bottomActions(), matchWrap());
 
         root.addView(content, new FrameLayout.LayoutParams(
@@ -251,24 +263,35 @@ public class LockQuizActivity extends Activity {
                 if (velocityTracker != null) velocityTracker.addMovement(event);
                 float dx = event.getRawX() - swipeStartX;
                 float dy = event.getRawY() - swipeStartY;
-                // 좌우 힌트 강조
                 if (Math.abs(dx) > Math.abs(dy)) {
                     float ratio = Math.min(1f, Math.abs(dx) / dp(SWIPE_THRESHOLD_DP));
                     if (unlockHint != null && quizHint != null) {
-                        if (dx < 0) { // 좌 스와이프 → 잠금해제
-                            unlockHint.setAlpha(0.5f + 0.5f * ratio);
-                            quizHint.setAlpha(0.5f);
-                        } else { // 우 스와이프 → 퀴즈
-                            quizHint.setAlpha(0.5f + 0.5f * ratio);
-                            unlockHint.setAlpha(0.5f);
+                        if (dx < 0) { // 좌 스와이프
+                            unlockHint.setAlpha(0.6f + 0.4f * ratio);
+                            unlockHint.setScaleX(1.0f + 0.1f * ratio);
+                            unlockHint.setScaleY(1.0f + 0.1f * ratio);
+                            quizHint.setAlpha(0.4f);
+                        } else { // 우 스와이프
+                            quizHint.setAlpha(0.6f + 0.4f * ratio);
+                            quizHint.setScaleX(1.0f + 0.1f * ratio);
+                            quizHint.setScaleY(1.0f + 0.1f * ratio);
+                            unlockHint.setAlpha(0.4f);
                         }
                     }
                 }
                 break;
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
-                if (unlockHint != null) unlockHint.setAlpha(0.85f);
-                if (quizHint != null) quizHint.setAlpha(0.85f);
+                if (unlockHint != null) {
+                    unlockHint.setAlpha(0.7f);
+                    unlockHint.setScaleX(1.0f);
+                    unlockHint.setScaleY(1.0f);
+                }
+                if (quizHint != null) {
+                    quizHint.setAlpha(0.7f);
+                    quizHint.setScaleX(1.0f);
+                    quizHint.setScaleY(1.0f);
+                }
                 if (velocityTracker != null) {
                     velocityTracker.addMovement(event);
                     velocityTracker.computeCurrentVelocity(1000);
@@ -283,10 +306,8 @@ public class LockQuizActivity extends Activity {
 
                     if (Math.abs(distX) > Math.abs(distY) * 1.5f) {
                         if (distX < -threshPx || velX < -velThreshPx) {
-                            // 좌 스와이프 → 잠금해제
                             performUnlock();
                         } else if (distX > threshPx || velX > velThreshPx) {
-                            // 우 스와이프 → 퀴즈
                             performOpenQuiz();
                         }
                     }
@@ -300,72 +321,45 @@ public class LockQuizActivity extends Activity {
         shell.setOrientation(LinearLayout.VERTICAL);
         shell.setGravity(Gravity.CENTER_HORIZONTAL);
 
-        // 슬라이드 힌트 라벨 (← 잠금해제 · 퀴즈 →)
-        LinearLayout hintRow = new LinearLayout(this);
-        hintRow.setOrientation(LinearLayout.HORIZONTAL);
-        hintRow.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams hintRowParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-        );
-        hintRowParams.setMargins(0, 0, 0, dp(14));
-        hintRow.setLayoutParams(hintRowParams);
+        // 통합 슬라이드 힌트 바
+        LinearLayout slideBar = new LinearLayout(this);
+        slideBar.setOrientation(LinearLayout.HORIZONTAL);
+        slideBar.setGravity(Gravity.CENTER_VERTICAL);
+        slideBar.setPadding(dp(20), dp(16), dp(20), dp(16));
+        slideBar.setBackground(pill(Color.argb(40, 255, 255, 255), Color.argb(60, 255, 255, 255)));
 
-        unlockHint = text("← 잠금해제", Color.argb(217, 255, 255, 255), 14, Typeface.BOLD);
-        unlockHint.setAlpha(0.85f);
-        unlockHint.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-        unlockHint.setOnClickListener(v -> performUnlock());
-        hintRow.addView(unlockHint, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        unlockHint = text("‹  잠금해제", Color.WHITE, 15, Typeface.BOLD);
+        unlockHint.setAlpha(0.7f);
+        slideBar.addView(unlockHint, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
 
-        TextView dot = text("·", Color.argb(140, 255, 255, 255), 16, Typeface.NORMAL);
-        hintRow.addView(dot, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        TextView centerIcon = text("●", Color.WHITE, 12, Typeface.NORMAL);
+        centerIcon.setAlpha(0.5f);
+        slideBar.addView(centerIcon, wrapWrap());
 
-        quizHint = text("퀴즈 →", Color.argb(217, 255, 255, 255), 14, Typeface.BOLD);
-        quizHint.setAlpha(0.85f);
-        quizHint.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        quizHint.setOnClickListener(v -> performOpenQuiz());
-        hintRow.addView(quizHint, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        quizHint = text("퀴즈풀기  ›", Color.WHITE, 15, Typeface.BOLD);
+        quizHint.setAlpha(0.7f);
+        quizHint.setGravity(Gravity.END);
+        slideBar.addView(quizHint, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
 
-        shell.addView(hintRow, matchWrap());
+        shell.addView(slideBar, new LinearLayout.LayoutParams(dp(280), LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        // 슬라이드 바 (좌=잠금해제 / 우=퀴즈)
-        LinearLayout slide = new LinearLayout(this);
-        slide.setOrientation(LinearLayout.HORIZONTAL);
-        slide.setPadding(dp(5), dp(5), dp(5), dp(5));
-        slide.setBackground(pill(Color.argb(48, 255, 255, 255), Color.argb(62, 255, 255, 255)));
-
-        TextView unlock = action("← 잠금 열기", Color.WHITE, Color.argb(42, 255, 255, 255));
-        unlock.setOnClickListener(v -> performUnlock());
-        slide.addView(unlock, new LinearLayout.LayoutParams(0, dp(56), 1));
-
-        TextView quiz = action("문제 풀기 →", Color.rgb(18, 34, 59), Color.WHITE);
-        quiz.setOnClickListener(v -> performOpenQuiz());
-        LinearLayout.LayoutParams quizParams = new LinearLayout.LayoutParams(0, dp(56), 1);
-        quizParams.setMargins(dp(6), 0, 0, 0);
-        slide.addView(quiz, quizParams);
-        shell.addView(slide, matchWrap());
-
-        // 단축키 (전화, 카메라)
+        // 단축키 영역 (심플하게)
         LinearLayout shortcuts = new LinearLayout(this);
         shortcuts.setGravity(Gravity.CENTER);
-        shortcuts.setPadding(0, dp(18), 0, 0);
+        shortcuts.setPadding(0, dp(24), 0, 0);
 
-        TextView phone = shortcut("☎");
-        phone.setContentDescription("전화");
+        TextView phone = shortcut("📞");
         phone.setOnClickListener(v -> openPhone());
-        shortcuts.addView(phone, new LinearLayout.LayoutParams(dp(58), dp(58)));
+        shortcuts.addView(phone, new LinearLayout.LayoutParams(dp(54), dp(54)));
 
-        TextView label = text("← 스와이프로 이동 →", Color.argb(170, 255, 255, 255), 12, Typeface.BOLD);
-        LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
-        labelParams.setMargins(dp(12), 0, dp(12), 0);
-        shortcuts.addView(label, labelParams);
+        View space = new View(this);
+        shortcuts.addView(space, new LinearLayout.LayoutParams(dp(40), 1));
 
-        TextView camera = shortcut("▣");
-        camera.setContentDescription("카메라");
+        TextView camera = shortcut("📷");
         camera.setOnClickListener(v -> openCamera());
-        shortcuts.addView(camera, new LinearLayout.LayoutParams(dp(58), dp(58)));
-        shell.addView(shortcuts, matchWrap());
+        shortcuts.addView(camera, new LinearLayout.LayoutParams(dp(54), dp(54)));
 
+        shell.addView(shortcuts, matchWrap());
         return shell;
     }
 
