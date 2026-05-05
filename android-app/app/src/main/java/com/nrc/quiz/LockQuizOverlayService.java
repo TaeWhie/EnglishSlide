@@ -14,6 +14,17 @@ import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.IBinder;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.List;
+import java.util.Random;
+
 public class LockQuizOverlayService extends Service {
     public static final String ACTION_SYNC_SETTINGS = "com.nrc.quiz.SYNC_LOCKSCREEN_SETTINGS";
     static final String PREFS = "nrc_native_settings";
@@ -21,13 +32,17 @@ public class LockQuizOverlayService extends Service {
     static final String KEY_REWARD_PROMPT = "lockscreen_reward_prompt";
 
     private static final String CHANNEL_ID = "lock_quiz_service";
+    private static final long ONE_DAY_MS = 24 * 60 * 60 * 1000L;
+    
     private KeyguardManager keyguardManager;
+    private WordEntry currentNotificationWord;
 
     private final BroadcastReceiver screenReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
             if (Intent.ACTION_SCREEN_ON.equals(action)) {
+                refreshNotification();
                 showLockQuizIfLocked();
             }
         }
@@ -38,7 +53,7 @@ public class LockQuizOverlayService extends Service {
         super.onCreate();
         keyguardManager = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
         registerReceiver(screenReceiver, new IntentFilter(Intent.ACTION_SCREEN_ON));
-        startForeground(41, buildNotification());
+        refreshNotification();
     }
 
     @Override
@@ -47,6 +62,7 @@ public class LockQuizOverlayService extends Service {
             stopSelf();
             return START_NOT_STICKY;
         }
+        refreshNotification();
         showLockQuizIfLocked();
         return START_STICKY;
     }
@@ -84,6 +100,11 @@ public class LockQuizOverlayService extends Service {
         startActivity(lockQuiz);
     }
 
+    private void refreshNotification() {
+        currentNotificationWord = loadRandomWordForToday();
+        startForeground(41, buildNotification());
+    }
+
     private Notification buildNotification() {
         createNotificationChannel();
         Intent intent = new Intent(this, MainActivity.class);
@@ -93,16 +114,76 @@ public class LockQuizOverlayService extends Service {
                 intent,
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0
         );
+
+        String title = "오늘의 단어";
+        String content = "잠금화면 퀴즈가 활성화되어 있습니다.";
+        
+        if (currentNotificationWord != null) {
+            title = currentNotificationWord.word + " [" + currentNotificationWord.part + "]";
+            content = currentNotificationWord.korean;
+        }
+
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 ? new Notification.Builder(this, CHANNEL_ID)
                 : new Notification.Builder(this);
+        
         return builder
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle("NRC Quiz")
-                .setContentText("잠금화면 퀴즈가 켜져 있습니다.")
+                .setContentTitle(title)
+                .setContentText(content)
+                .setSubText("NRC Quiz 학습 중")
                 .setContentIntent(pendingIntent)
                 .setOngoing(true)
+                .setVisibility(Notification.VISIBILITY_PUBLIC)
+                .setPriority(Notification.PRIORITY_LOW)
                 .build();
+    }
+
+    private WordEntry loadRandomWordForToday() {
+        try {
+            InputStream input = getAssets().open("www/data/words.json");
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            byte[] buffer = new byte[4096];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                output.write(buffer, 0, read);
+            }
+            JSONArray words = new JSONArray(output.toString(StandardCharsets.UTF_8.name()));
+            
+            // Calculate today's unit (Simplified)
+            int maxUnit = 1;
+            List<WordEntry> allWords = new ArrayList<>();
+            for (int i = 0; i < words.length(); i++) {
+                JSONObject word = words.getJSONObject(i);
+                WordEntry entry = new WordEntry(
+                        word.optString("word", ""),
+                        word.optString("part", ""),
+                        word.optInt("unit", 1),
+                        word.optString("korean", ""),
+                        word.optString("english", "")
+                );
+                maxUnit = Math.max(maxUnit, entry.unit);
+                allWords.add(entry);
+            }
+
+            Calendar start = Calendar.getInstance();
+            start.set(2026, Calendar.MAY, 5, 0, 0, 0);
+            Calendar today = Calendar.getInstance();
+            long dayOffset = (today.getTimeInMillis() - start.getTimeInMillis()) / ONE_DAY_MS;
+            int todayUnit = (int) Math.floorMod(dayOffset, maxUnit) + 1;
+
+            List<WordEntry> todayWords = new ArrayList<>();
+            for (WordEntry e : allWords) {
+                if (e.unit == todayUnit) todayWords.add(e);
+            }
+
+            if (!todayWords.isEmpty()) {
+                return todayWords.get(new Random().nextInt(todayWords.size()));
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
     }
 
     private void createNotificationChannel() {
@@ -112,7 +193,16 @@ public class LockQuizOverlayService extends Service {
                 "Lockscreen quiz",
                 NotificationManager.IMPORTANCE_LOW
         );
+        channel.setDescription("잠금화면 상태 및 오늘의 단어를 표시합니다.");
         NotificationManager manager = getSystemService(NotificationManager.class);
         manager.createNotificationChannel(channel);
+    }
+
+    private static class WordEntry {
+        final String word, part, korean, english;
+        final int unit;
+        WordEntry(String word, String part, int unit, String korean, String english) {
+            this.word = word; this.part = part; this.unit = unit; this.korean = korean; this.english = english;
+        }
     }
 }

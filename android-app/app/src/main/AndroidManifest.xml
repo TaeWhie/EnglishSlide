@@ -15,6 +15,7 @@
         <service
             android:name=".LockQuizOverlayService"
             android:exported="false"
+            android:stopWithTask="false"
             android:foregroundServiceType="dataSync" />
         <receiver
             android:name=".BootReceiver"
