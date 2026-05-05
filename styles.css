@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   --ink: #172033;
   --muted: #657186;
   --line: #dbe3ee;
@@ -589,6 +589,10 @@ h1 {
 .complete-panel p {
   color: var(--muted);
 }
+
+.shop-list {
+  display: grid;
+  grid-template-columns: 1fr;
   gap: 14px;
   margin-top: 14px;
 }
