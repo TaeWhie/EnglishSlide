@@ -12,7 +12,7 @@ public class BootReceiver extends BroadcastReceiver {
         if (!Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) return;
 
         SharedPreferences prefs = context.getSharedPreferences(LockQuizOverlayService.PREFS, Context.MODE_PRIVATE);
-        if (!prefs.getBoolean(LockQuizOverlayService.KEY_ENABLED, false)) {
+        if (!prefs.getBoolean(LockQuizOverlayService.KEY_ENABLED, LockQuizOverlayService.DEFAULT_ENABLED)) {
             return;
         }
 

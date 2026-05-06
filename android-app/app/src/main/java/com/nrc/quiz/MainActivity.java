@@ -126,7 +126,13 @@ public class MainActivity extends Activity {
 
     private void syncLockscreenService() {
         SharedPreferences prefs = getSharedPreferences(LockQuizOverlayService.PREFS, MODE_PRIVATE);
-        boolean enabled = prefs.getBoolean(LockQuizOverlayService.KEY_ENABLED, false);
+        if (!prefs.contains(LockQuizOverlayService.KEY_ENABLED)) {
+            prefs.edit()
+                    .putBoolean(LockQuizOverlayService.KEY_ENABLED, LockQuizOverlayService.DEFAULT_ENABLED)
+                    .putBoolean(LockQuizOverlayService.KEY_REWARD_PROMPT, LockQuizOverlayService.DEFAULT_REWARD_PROMPT)
+                    .apply();
+        }
+        boolean enabled = prefs.getBoolean(LockQuizOverlayService.KEY_ENABLED, LockQuizOverlayService.DEFAULT_ENABLED);
         Intent service = new Intent(this, LockQuizOverlayService.class);
         if (enabled) {
             service.setAction(LockQuizOverlayService.ACTION_SYNC_SETTINGS);

@@ -142,7 +142,7 @@ public class LockQuizActivity extends Activity {
 
     private boolean isEnabled() {
         SharedPreferences prefs = getSharedPreferences(LockQuizOverlayService.PREFS, MODE_PRIVATE);
-        return prefs.getBoolean(LockQuizOverlayService.KEY_ENABLED, false);
+        return prefs.getBoolean(LockQuizOverlayService.KEY_ENABLED, LockQuizOverlayService.DEFAULT_ENABLED);
     }
 
     private boolean isDeviceLocked() {

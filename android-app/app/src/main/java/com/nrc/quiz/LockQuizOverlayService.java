@@ -30,6 +30,8 @@ public class LockQuizOverlayService extends Service {
     static final String PREFS = "nrc_native_settings";
     static final String KEY_ENABLED = "lockscreen_enabled";
     static final String KEY_REWARD_PROMPT = "lockscreen_reward_prompt";
+    static final boolean DEFAULT_ENABLED = true;
+    static final boolean DEFAULT_REWARD_PROMPT = true;
 
     private static final String CHANNEL_ID = "lock_quiz_service";
     private static final long ONE_DAY_MS = 24 * 60 * 60 * 1000L;
@@ -83,7 +85,7 @@ public class LockQuizOverlayService extends Service {
 
     private boolean isEnabled() {
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        return prefs.getBoolean(KEY_ENABLED, false);
+        return prefs.getBoolean(KEY_ENABLED, DEFAULT_ENABLED);
     }
 
     private boolean isDeviceLocked() {
