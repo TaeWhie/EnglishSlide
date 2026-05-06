@@ -150,10 +150,7 @@ async function renderQuiz() {
     $("#optionList").innerHTML = "";
     $("#quizFeedback").classList.add("hidden");
     $("#quizComplete").classList.remove("hidden");
-    const rewardButton = $("#claimRewardButton");
-    if (rewardButton) {
-      rewardButton.textContent = state.quizMode === "incorrect" ? "퀴즈 선택으로 돌아가기" : "광고 보고 보상 받기";
-    }
+    await updateRewardControls();
     renderReview();
     $("#reviewPanel").classList.remove("hidden");
     updateStats();
@@ -242,6 +239,12 @@ async function verifyAnswer(selectedIndex) {
       }
     });
 
+    if (state.answers.length >= 10) {
+      updateStats();
+      renderQuiz();
+      return;
+    }
+
     $("#quizFeedback").innerHTML = `
       <strong>${isCorrect ? "정답입니다" : "아쉬워요"}</strong>
       <p>${res.explanation}</p>
@@ -283,6 +286,42 @@ function openQuizModeSelect() {
   state.locked = false;
   switchView("quizView");
   syncRoute("quizView");
+}
+
+async function updateRewardControls() {
+  const rewardButton = $("#claimRewardButton");
+  const skipButton = $("#skipRewardButton");
+  if (skipButton) skipButton.classList.remove("hidden");
+  if (!rewardButton) return;
+
+  rewardButton.textContent = "보상 획득";
+  rewardButton.disabled = false;
+
+  if (state.quizMode === "incorrect") {
+    rewardButton.textContent = "오답 퀴즈는 보상 없음";
+    rewardButton.disabled = true;
+    return;
+  }
+
+  if (!state.user?.user_id) {
+    rewardButton.textContent = "로그인 필요";
+    rewardButton.disabled = true;
+    return;
+  }
+
+  try {
+    const status = await apiCall(`/quizzes/reward-status?user_id=${encodeURIComponent(state.user.user_id)}`);
+    const remaining = Number(status.remaining_reward_points || 0);
+    if (remaining <= 0) {
+      rewardButton.textContent = "오늘 보상 한도 도달";
+      rewardButton.disabled = true;
+    } else {
+      rewardButton.textContent = `보상 획득 (최대 ${formatNumber(remaining)}P)`;
+    }
+  } catch (err) {
+    rewardButton.textContent = "보상 확인 실패";
+    rewardButton.disabled = true;
+  }
 }
 
 async function claimReward() {
@@ -451,6 +490,7 @@ function bindEvents() {
   $("#lockscreenReward")?.addEventListener("change", (e) => { state.lockscreen.rewardPrompt = e.target.checked; saveLockscreenSettings(); });
 
   $("#claimRewardButton")?.addEventListener("click", claimReward);
+  $("#skipRewardButton")?.addEventListener("click", openQuizModeSelect);
   $("#startNextSetButton")?.addEventListener("click", () => { state.quizzes = []; switchView("quizView"); });
   $("#startIncorrectQuiz")?.addEventListener("click", startIncorrectQuiz);
 

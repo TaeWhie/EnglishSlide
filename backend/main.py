@@ -281,6 +281,15 @@ def daily_progress_for_user(user_id: str) -> dict:
     return {"daily_solved": solved_count, "daily_completed": solved_count >= 10}
 
 
+def daily_reward_total_for_user(user_id: str, reward_date: str) -> int:
+    rewards = firestore_db.collection("point_logs") \
+        .where("user_id", "==", user_id) \
+        .where("reason", "==", "daily_quiz_reward") \
+        .where("ref_id", "==", reward_date) \
+        .stream()
+    return sum(int(doc.to_dict().get("amount", 0)) for doc in rewards)
+
+
 @app.post("/v1/auth/google-login")
 def google_login(payload: GoogleLoginRequest):
     google_sub = payload.google_sub
@@ -385,13 +394,7 @@ def claim_quiz_reward(payload: QuizRewardRequest):
     if not user_doc.exists:
         raise HTTPException(status_code=404, detail="user not found")
 
-    # 오늘 이미 받은 누적 보상 확인
-    existing_rewards = firestore_db.collection("point_logs") \
-        .where("user_id", "==", payload.user_id) \
-        .where("reason", "==", "daily_quiz_reward") \
-        .where("ref_id", "==", today) \
-        .stream()
-    total_earned_today = sum(int(doc.to_dict().get("amount", 0)) for doc in existing_rewards)
+    total_earned_today = daily_reward_total_for_user(payload.user_id, today)
 
     # 최근 10개 풀이 기록을 기반으로 보상 계산
     solved_logs = [
@@ -413,8 +416,7 @@ def claim_quiz_reward(payload: QuizRewardRequest):
     # 10문제 세트당 기본 보상 (최대 100P 중 정답률 반영)
     potential_reward = int(DAILY_QUIZ_REWARD_MAX_POINTS * reward_percent / 100)
     
-    # 일일 총합 100P 한도 적용
-    remaining_cap = max(0, 100 - total_earned_today)
+    remaining_cap = max(0, DAILY_QUIZ_REWARD_MAX_POINTS - total_earned_today)
     reward_points = min(potential_reward, remaining_cap)
 
     current_points = int(user_doc.to_dict().get("total_points", 0))
@@ -436,12 +438,30 @@ def claim_quiz_reward(payload: QuizRewardRequest):
     })
     
     return {
-        "already_claimed": total_earned_today >= 100,
+        "already_claimed": total_earned_today >= DAILY_QUIZ_REWARD_MAX_POINTS,
         "reward_points": reward_points,
         "reward_percent": reward_percent,
         "correct_count": correct_count,
         "current_total_points": total_points,
-        "daily_total_earned": total_earned_today + reward_points
+        "daily_total_earned": total_earned_today + reward_points,
+        "daily_reward_cap": DAILY_QUIZ_REWARD_MAX_POINTS,
+        "remaining_reward_points": max(0, DAILY_QUIZ_REWARD_MAX_POINTS - (total_earned_today + reward_points)),
+    }
+
+
+@app.get("/v1/quizzes/reward-status")
+def quiz_reward_status(user_id: str):
+    today = datetime.date.today().isoformat()
+    user_doc = user_ref(user_id).get()
+    if not user_doc.exists:
+        raise HTTPException(status_code=404, detail="user not found")
+    total_earned_today = daily_reward_total_for_user(user_id, today)
+    remaining = max(0, DAILY_QUIZ_REWARD_MAX_POINTS - total_earned_today)
+    return {
+        "daily_total_earned": total_earned_today,
+        "daily_reward_cap": DAILY_QUIZ_REWARD_MAX_POINTS,
+        "remaining_reward_points": remaining,
+        "already_claimed": remaining <= 0,
     }
 
 
