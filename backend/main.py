@@ -19,7 +19,7 @@ FIREBASE_SERVICE_ACCOUNT_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "")
 FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
 ALLOW_UNVERIFIED_GOOGLE_LOGIN = os.getenv("ALLOW_UNVERIFIED_GOOGLE_LOGIN", "").lower() in ("1", "true", "yes")
 WORDS_PATH = os.path.join(os.path.dirname(__file__), "data", "words.json")
-DAILY_QUIZ_REWARD_MAX_POINTS = 1000
+DAILY_QUIZ_REWARD_MAX_POINTS = 100
 
 QUIZZES = [
     (1, "다음 중 '혜택'이라는 뜻을 가진 단어는?", '["Benefit", "Battery", "Balance", "Banner"]', 0, "Life English", 1, "Benefit은 혜택이나 이익을 뜻합니다."),

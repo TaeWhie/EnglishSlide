@@ -141,7 +141,8 @@ function startTimer() {
 }
 
 async function renderQuiz() {
-  if (state.completed && state.answers.length % 10 === 0 && state.answers.length > 0) {
+  if (state.answers.length >= 10) {
+    state.completed = true;
     clearInterval(state.timerId);
     $("#quizHead").classList.add("hidden");
     $("#quizProgressWrap").classList.add("hidden");
@@ -149,6 +150,10 @@ async function renderQuiz() {
     $("#optionList").innerHTML = "";
     $("#quizFeedback").classList.add("hidden");
     $("#quizComplete").classList.remove("hidden");
+    const rewardButton = $("#claimRewardButton");
+    if (rewardButton) {
+      rewardButton.textContent = state.quizMode === "incorrect" ? "퀴즈 선택으로 돌아가기" : "광고 보고 보상 받기";
+    }
     renderReview();
     $("#reviewPanel").classList.remove("hidden");
     updateStats();
@@ -221,7 +226,7 @@ async function verifyAnswer(selectedIndex) {
     const isCorrect = res.is_correct;
     state.points = res.current_total_points;
     state.solved = res.daily_solved;
-    state.completed = res.daily_completed;
+    state.completed = state.answers.length + 1 >= 10;
 
     state.answers.push({
       quizIndex: state.current, question: quiz.question, selected: selectedAnswer,
@@ -253,6 +258,12 @@ async function verifyAnswer(selectedIndex) {
 }
 
 function nextQuiz() {
+  if (state.answers.length >= 10) {
+    state.completed = true;
+    state.locked = false;
+    renderQuiz();
+    return;
+  }
   state.current = (state.current + 1) % state.quizzes.length;
   state.locked = false;
   renderQuiz();
@@ -275,6 +286,10 @@ function openQuizModeSelect() {
 }
 
 async function claimReward() {
+  if (state.quizMode === "incorrect") {
+    openQuizModeSelect();
+    return;
+  }
   if (!state.user) return;
   try {
     const res = await withLoading("리워드 신청 중", "포인트 적립을 진행합니다.", () => apiCall('/quizzes/reward', 'POST', {
@@ -283,7 +298,7 @@ async function claimReward() {
     state.points = res.current_total_points;
     updateStats();
     showToast(res.reward_points > 0 ? `축하합니다! ${res.reward_points}P가 적립되었습니다.` : "오늘의 한도에 도달했거나 적립 포인트가 없습니다.");
-    renderReview();
+    openQuizModeSelect();
   } catch (err) { showToast(err.message || "오류가 발생했습니다."); }
 }
 
