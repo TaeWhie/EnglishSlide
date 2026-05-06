@@ -167,10 +167,13 @@
           <div class="settings-group">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
               <h3 style="margin: 0;">오답노트</h3>
-              <button id="startIncorrectQuiz" class="action-button compact outline" type="button" style="padding: 4px 12px; font-size: 12px;">오답 퀴즈 풀기</button>
+              <button id="showIncorrectNoteButton" class="action-button compact outline" type="button" style="padding: 4px 12px; font-size: 12px;">오답 노트</button>
             </div>
-            <div id="incorrectWordList" class="incorrect-list" style="background: #fff; border-radius: 8px; border: 1px solid var(--line); min-height: 80px; padding: 12px; max-height: 200px; overflow-y: auto;">
-              <p class="empty-msg" style="text-align: center; color: var(--muted); padding: 20px 0; font-size: 14px;">틀린 단어가 아직 없습니다.</p>
+            <div id="incorrectNotePanel" class="hidden">
+              <div id="incorrectWordList" class="incorrect-list" style="background: #fff; border-radius: 8px; border: 1px solid var(--line); min-height: 80px; padding: 12px; max-height: 200px; overflow-y: auto;">
+                <p class="empty-msg" style="text-align: center; color: var(--muted); padding: 20px 0; font-size: 14px;">틀린 단어가 아직 없습니다.</p>
+              </div>
+              <button id="startIncorrectQuiz" class="action-button compact outline" type="button" style="width: 100%; margin-top: 10px;">오답 퀴즈 풀기</button>
             </div>
           </div>
 

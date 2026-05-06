@@ -418,6 +418,13 @@ function renderIncorrectWords() {
   `).join("") : '<p class="empty-msg">틀린 단어가 없습니다.</p>';
 }
 
+function toggleIncorrectNote() {
+  const panel = $("#incorrectNotePanel");
+  if (!panel) return;
+  renderIncorrectWords();
+  panel.classList.toggle("hidden");
+}
+
 function startIncorrectQuiz() {
   if (state.incorrectWords.length < 4) { showToast("단어가 부족합니다 (최소 4개)."); return; }
   const picked = [...state.incorrectWords].sort(() => 0.5 - Math.random()).slice(0, 10);
@@ -492,6 +499,7 @@ function bindEvents() {
   $("#claimRewardButton")?.addEventListener("click", claimReward);
   $("#skipRewardButton")?.addEventListener("click", openQuizModeSelect);
   $("#startNextSetButton")?.addEventListener("click", () => { state.quizzes = []; switchView("quizView"); });
+  $("#showIncorrectNoteButton")?.addEventListener("click", toggleIncorrectNote);
   $("#startIncorrectQuiz")?.addEventListener("click", startIncorrectQuiz);
 
   $("#logoutButton")?.addEventListener("click", () => { localStorage.clear(); location.reload(); });

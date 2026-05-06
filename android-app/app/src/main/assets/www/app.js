@@ -326,6 +326,7 @@ function switchView(viewId) {
   } else if (viewId === "reportView") {
     renderCoupons();
     renderLockscreenSettings();
+    renderIncorrectWords();
     clearInterval(state.timerId);
     state.locked = false;
   } else {
@@ -639,6 +640,24 @@ function saveIncorrectWord(quiz) {
   }
 }
 
+function renderIncorrectWords() {
+  const container = $("#incorrectWordList");
+  if (!container) return;
+  container.innerHTML = state.incorrectWords.length ? state.incorrectWords.map((word) => `
+    <div class="incorrect-item">
+      <strong>${word.word}</strong>
+      <span>${word.korean || word.english || ""}</span>
+    </div>
+  `).join("") : '<div class="empty-state">틀린 단어가 아직 없습니다.</div>';
+}
+
+function toggleIncorrectNote() {
+  const panel = $("#incorrectNotePanel");
+  if (!panel) return;
+  renderIncorrectWords();
+  panel.classList.toggle("hidden");
+}
+
 function startIncorrectQuiz() {
   if (state.incorrectWords.length < 4) {
     showToast("오답 단어가 부족합니다. 최소 4개가 필요합니다.");
@@ -891,6 +910,8 @@ function bindEvents() {
   }));
   $("#claimRewardButton")?.addEventListener("click", claimReward);
   $("#skipRewardButton")?.addEventListener("click", openQuizModeSelect);
+  $("#showIncorrectNoteButton")?.addEventListener("click", toggleIncorrectNote);
+  $("#startIncorrectQuiz")?.addEventListener("click", startIncorrectQuiz);
   $("#lockscreenEnabled").addEventListener("change", (event) => {
     state.lockscreen.enabled = event.target.checked;
     saveLockscreenSettings();

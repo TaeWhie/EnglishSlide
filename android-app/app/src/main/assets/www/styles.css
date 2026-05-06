@@ -544,6 +544,34 @@ h1 {
   margin-top: 14px;
 }
 
+.incorrect-list {
+  display: grid;
+  gap: 10px;
+  max-height: 220px;
+  margin-top: 14px;
+  overflow-y: auto;
+}
+
+.incorrect-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.incorrect-item span {
+  color: var(--muted);
+  text-align: right;
+}
+
+#incorrectNotePanel .outline-button {
+  width: 100%;
+  margin-top: 12px;
+}
+
 .review-card {
   display: grid;
   grid-template-columns: 54px 1fr;
