@@ -173,12 +173,9 @@ def build_word_quiz(word: dict, mode: str, quiz_date: str):
 def daily_word_quizzes(mode: str, quiz_date: str):
     if mode not in ("eng", "kor"):
         raise HTTPException(status_code=400, detail="invalid quiz mode")
-    unit = unit_for_date(quiz_date)
-    unit_words = words_for_unit(unit)
-    if len(unit_words) < 4:
-        raise HTTPException(status_code=500, detail="not enough words for daily unit")
-    rng = random.Random(f"{quiz_date}:{mode}:daily:unit:{unit}")
-    picked = rng.sample(unit_words, min(10, len(unit_words)))
+    if len(WORDS) < 4:
+        raise HTTPException(status_code=500, detail="not enough words for daily quiz")
+    picked = random.SystemRandom().sample(WORDS, min(10, len(WORDS)))
     return [build_word_quiz(word, mode, quiz_date) for word in picked]
 
 
@@ -194,8 +191,6 @@ def quiz_by_id(quiz_id: str):
         raise HTTPException(status_code=404, detail="quiz not found")
     word = next((entry for entry in WORDS if int(entry["id"]) == word_id), None)
     if not word:
-        raise HTTPException(status_code=404, detail="quiz not found")
-    if int(word.get("unit", 1)) != unit_for_date(quiz_date):
         raise HTTPException(status_code=404, detail="quiz not found")
     return build_word_quiz(word, mode, quiz_date)
 
@@ -320,13 +315,11 @@ def google_login(payload: GoogleLoginRequest):
 def daily_quizzes(mode: str = "kor"):
     today = datetime.date.today().isoformat()
     if mode == "mixed":
-        unit = unit_for_date(today)
-        unit_words = words_for_unit(unit)
-        if len(unit_words) < 5:
-            raise HTTPException(status_code=500, detail="not enough words for mixed unit")
+        if len(WORDS) < 5:
+            raise HTTPException(status_code=500, detail="not enough words for mixed quiz")
         
-        rng = random.Random(f"{today}:mixed:unit:{unit}")
-        picked = rng.sample(unit_words, min(10, len(unit_words)))
+        rng = random.SystemRandom()
+        picked = rng.sample(WORDS, min(10, len(WORDS)))
         quizzes = []
         for i, word in enumerate(picked):
             m = "kor" if i < 5 else "eng"
