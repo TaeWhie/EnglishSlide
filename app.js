@@ -3,6 +3,7 @@ const API_BASE = window.location.hostname === "127.0.0.1" || window.location.hos
   : "https://nrc-backend-llgx.onrender.com/v1";
 
 const todayKey = new Date().toISOString().slice(0, 10);
+const quizSessionKey = "nrc_active_quiz_session";
 const savedDaily = JSON.parse(localStorage.getItem("nrc_daily_quiz") || "{}");
 const initialDaily = savedDaily.date === todayKey ? savedDaily : { date: todayKey, solved: 0, current: 0, completed: false, answers: [] };
 const savedProfile = JSON.parse(localStorage.getItem("nrc_user_profile") || "null");
@@ -24,6 +25,7 @@ const state = {
   locked: false,
   timer: 15,
   timerId: null,
+  questionDeadline: null,
   totalRevenue: 1250400
 };
 
@@ -129,20 +131,78 @@ function routeFromHash() {
 
 function startTimer() {
   clearInterval(state.timerId);
-  state.timer = 15;
+  if (!state.questionDeadline) state.questionDeadline = Date.now() + 15000;
+  state.timer = Math.max(0, Math.ceil((state.questionDeadline - Date.now()) / 1000));
   $("#timer").textContent = state.timer;
-  $("#quizProgress").style.width = "100%";
+  $("#quizProgress").style.width = `${Math.max(0, (state.timer / 15) * 100)}%`;
+  if (state.timer <= 0) {
+    verifyAnswer(-1);
+    return;
+  }
+  saveQuizSession();
   state.timerId = setInterval(() => {
-    state.timer -= 1;
+    state.timer = Math.max(0, Math.ceil((state.questionDeadline - Date.now()) / 1000));
     $("#timer").textContent = state.timer;
     $("#quizProgress").style.width = `${Math.max(0, (state.timer / 15) * 100)}%`;
     if (state.timer <= 0) { clearInterval(state.timerId); verifyAnswer(-1); }
   }, 1000);
 }
 
+function restoreQuizSession() {
+  const saved = JSON.parse(localStorage.getItem(quizSessionKey) || "null");
+  if (!saved || saved.date !== todayKey || !Array.isArray(saved.quizzes) || saved.quizzes.length === 0) return;
+  if (Array.isArray(saved.answers) && saved.answers.length >= 10 && !saved.completed) return;
+  state.quizMode = saved.quizMode || state.quizMode;
+  state.quizzes = saved.quizzes;
+  state.current = Number(saved.current || 0);
+  state.completed = Boolean(saved.completed);
+  state.answers = Array.isArray(saved.answers) ? saved.answers : [];
+  state.questionDeadline = saved.questionDeadline || null;
+}
+
+function saveQuizSession() {
+  if (!Array.isArray(state.quizzes) || state.quizzes.length === 0) return;
+  localStorage.setItem(quizSessionKey, JSON.stringify({
+    date: todayKey,
+    quizMode: state.quizMode,
+    quizzes: state.quizzes,
+    current: state.current,
+    completed: state.completed,
+    answers: state.answers,
+    questionDeadline: state.questionDeadline
+  }));
+}
+
+function clearQuizSession() {
+  localStorage.removeItem(quizSessionKey);
+}
+
+function advancePastAnsweredQuestion() {
+  if (!state.quizzes.length || !state.answers.length || state.answers.length >= 10) return;
+  const answered = new Set(state.answers.map((answer) => Number(answer.quizIndex)));
+  let guard = 0;
+  const initialCurrent = state.current;
+  while (answered.has(state.current) && guard < state.quizzes.length) {
+    state.current = (state.current + 1) % state.quizzes.length;
+    guard += 1;
+  }
+  if (state.current !== initialCurrent) state.questionDeadline = null;
+  saveQuizSession();
+}
+
+function resumeOrOpenQuiz() {
+  if (state.quizzes.length) {
+    switchView("quizView");
+    syncRoute("quizView");
+  } else {
+    openQuizModeSelect();
+  }
+}
+
 async function renderQuiz() {
   if (state.answers.length >= 10) {
     state.completed = true;
+    saveQuizSession();
     clearInterval(state.timerId);
     $("#quizHead").classList.add("hidden");
     $("#quizProgressWrap").classList.add("hidden");
@@ -172,6 +232,7 @@ async function renderQuiz() {
   $("#quizModeSelect")?.classList.add("hidden");
   $("#quizComplete").classList.add("hidden");
   $("#reviewPanel").classList.add("hidden");
+  advancePastAnsweredQuestion();
 
   const quiz = state.quizzes[state.current % state.quizzes.length];
   if (!quiz) return;
@@ -229,6 +290,7 @@ async function verifyAnswer(selectedIndex) {
       quizIndex: state.current, question: quiz.question, selected: selectedAnswer,
       correct: quiz.options ? quiz.options[res.correct_idx] : "", isCorrect, explanation: res.explanation, category: quiz.category
     });
+    saveQuizSession();
 
     $$(".option-button").forEach((button) => {
       const index = Number(button.dataset.index);
@@ -268,20 +330,25 @@ function nextQuiz() {
     return;
   }
   state.current = (state.current + 1) % state.quizzes.length;
+  state.questionDeadline = null;
   state.locked = false;
+  saveQuizSession();
   renderQuiz();
 }
 
 function startNextSet() {
-  state.quizzes = []; state.completed = false; state.answers = []; state.current = 0;
+  clearQuizSession();
+  state.quizzes = []; state.completed = false; state.answers = []; state.current = 0; state.questionDeadline = null;
   switchView("quizView");
 }
 
 function openQuizModeSelect() {
+  clearQuizSession();
   state.quizzes = [];
   state.completed = false;
   state.current = 0;
   state.answers = [];
+  state.questionDeadline = null;
   clearInterval(state.timerId);
   state.locked = false;
   switchView("quizView");
@@ -337,6 +404,7 @@ async function claimReward() {
     state.points = res.current_total_points;
     updateStats();
     showToast(res.reward_points > 0 ? `축하합니다! ${res.reward_points}P가 적립되었습니다.` : "오늘의 한도에 도달했거나 적립 포인트가 없습니다.");
+    clearQuizSession();
     openQuizModeSelect();
   } catch (err) { showToast(err.message || "오류가 발생했습니다."); }
 }
@@ -443,6 +511,8 @@ function startIncorrectQuiz() {
     return { quiz_id: "incorrect_" + w.word, word: w.word, question: w.word, options, category: "오답 복습", level: w.level || 1, explanation: w.korean, _correct_idx: options.indexOf(w.korean) };
   });
   state.quizMode = 'incorrect'; state.completed = false; state.current = 0; state.answers = [];
+  state.questionDeadline = null;
+  saveQuizSession();
   switchView("quizView");
 }
 
@@ -462,6 +532,8 @@ async function fetchQuizzesAndStart() {
   try {
     state.quizzes = await withLoading("로딩 중", "문제를 생성하고 있습니다.", () => apiCall(`/quizzes/daily?mode=${state.quizMode}`));
     state.completed = false; state.current = 0; state.answers = [];
+    state.questionDeadline = null;
+    saveQuizSession();
     renderQuiz();
   } catch (e) { showToast("불러오기 실패"); }
 }
@@ -481,16 +553,16 @@ function bindEvents() {
 
   $$(".nav-item").forEach(item => item.addEventListener("click", () => {
     if (item.dataset.view === "quizView") {
-      openQuizModeSelect();
+      resumeOrOpenQuiz();
       return;
     }
     switchView(item.dataset.view);
     syncRoute(item.dataset.view);
   }));
 
-  $("#startQuizMixed")?.addEventListener("click", openQuizModeSelect);
-  $("#startQuizKor")?.addEventListener("click", openQuizModeSelect);
-  $("#startQuizEng")?.addEventListener("click", openQuizModeSelect);
+  $("#startQuizMixed")?.addEventListener("click", resumeOrOpenQuiz);
+  $("#startQuizKor")?.addEventListener("click", resumeOrOpenQuiz);
+  $("#startQuizEng")?.addEventListener("click", resumeOrOpenQuiz);
 
   $$(".mode-btn").forEach(btn => btn.addEventListener("click", () => {
     if (btn.dataset.mode === "incorrect") {
@@ -506,7 +578,7 @@ function bindEvents() {
 
   $("#claimRewardButton")?.addEventListener("click", claimReward);
   $("#skipRewardButton")?.addEventListener("click", openQuizModeSelect);
-  $("#startNextSetButton")?.addEventListener("click", () => { state.quizzes = []; switchView("quizView"); });
+  $("#startNextSetButton")?.addEventListener("click", openQuizModeSelect);
   $("#showIncorrectNoteButton")?.addEventListener("click", toggleIncorrectNote);
   $("#startIncorrectQuiz")?.addEventListener("click", startIncorrectQuiz);
 
@@ -523,6 +595,7 @@ async function init() {
   }
 
   bindEvents();
+  restoreQuizSession();
   if (hasLogin()) {
     showApp();
     await Promise.all([renderShop(), renderCoupons(), renderLockscreenSettings()]);
