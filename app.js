@@ -101,8 +101,6 @@ function switchView(viewId) {
   $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === viewId));
   
   if (viewId === "quizView") {
-    // 탭을 눌러 퀴즈로 올 때마다 초기화하도록 강제
-    state.quizzes = [];
     clearInterval(state.timerId);
     state.locked = false;
     renderQuiz();
@@ -164,6 +162,8 @@ async function renderQuiz() {
     $("#quizComplete").classList.add("hidden");
     $("#reviewPanel").classList.add("hidden");
     $("#quizModeSelect")?.classList.remove("hidden");
+    $("#optionList").innerHTML = "";
+    $("#quizFeedback").classList.add("hidden");
     return;
   }
 
@@ -261,6 +261,17 @@ function nextQuiz() {
 function startNextSet() {
   state.quizzes = []; state.completed = false; state.answers = []; state.current = 0;
   switchView("quizView");
+}
+
+function openQuizModeSelect() {
+  state.quizzes = [];
+  state.completed = false;
+  state.current = 0;
+  state.answers = [];
+  clearInterval(state.timerId);
+  state.locked = false;
+  switchView("quizView");
+  syncRoute("quizView");
 }
 
 async function claimReward() {
@@ -400,16 +411,26 @@ function bindEvents() {
   });
 
   $$(".nav-item").forEach(item => item.addEventListener("click", () => {
-    if (item.dataset.view === "quizView") { state.quizzes = []; clearInterval(state.timerId); state.locked = false; }
+    if (item.dataset.view === "quizView") {
+      openQuizModeSelect();
+      return;
+    }
     switchView(item.dataset.view);
     syncRoute(item.dataset.view);
   }));
 
-  $("#startQuizMixed")?.addEventListener("click", () => { state.quizMode = 'mixed'; state.quizzes = []; switchView("quizView"); });
-  $("#startQuizKor")?.addEventListener("click", () => { state.quizMode = 'kor'; state.quizzes = []; switchView("quizView"); });
-  $("#startQuizEng")?.addEventListener("click", () => { state.quizMode = 'eng'; state.quizzes = []; switchView("quizView"); });
+  $("#startQuizMixed")?.addEventListener("click", openQuizModeSelect);
+  $("#startQuizKor")?.addEventListener("click", openQuizModeSelect);
+  $("#startQuizEng")?.addEventListener("click", openQuizModeSelect);
 
-  $$(".mode-btn").forEach(btn => btn.addEventListener("click", () => { state.quizMode = btn.dataset.mode; fetchQuizzesAndStart(); }));
+  $$(".mode-btn").forEach(btn => btn.addEventListener("click", () => {
+    if (btn.dataset.mode === "incorrect") {
+      startIncorrectQuiz();
+      return;
+    }
+    state.quizMode = btn.dataset.mode;
+    fetchQuizzesAndStart();
+  }));
 
   $("#lockscreenEnabled")?.addEventListener("change", (e) => { state.lockscreen.enabled = e.target.checked; saveLockscreenSettings(); });
   $("#lockscreenReward")?.addEventListener("change", (e) => { state.lockscreen.rewardPrompt = e.target.checked; saveLockscreenSettings(); });

@@ -409,6 +409,28 @@ h1 {
   margin: 0 auto;
 }
 
+.mode-select-panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 400px;
+  padding: 40px 24px;
+  text-align: center;
+}
+
+.mode-buttons {
+  display: grid;
+  gap: 12px;
+  width: min(360px, 100%);
+  margin-top: 24px;
+}
+
+.mode-btn {
+  min-height: 52px;
+  padding: 0 18px;
+}
+
 .quiz-head,
 .shop-head {
   display: flex;

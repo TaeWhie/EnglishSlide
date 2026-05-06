@@ -335,14 +335,6 @@ def verify_quiz(payload: QuizVerifyRequest):
     user_doc = user_ref(payload.user_id).get()
     if not user_doc.exists:
         raise HTTPException(status_code=404, detail="user not found")
-
-@app.post("/v1/quizzes/verify")
-def verify_quiz(payload: QuizVerifyRequest):
-    today = datetime.date.today().isoformat()
-    now = now_iso()
-    user_doc = user_ref(payload.user_id).get()
-    if not user_doc.exists:
-        raise HTTPException(status_code=404, detail="user not found")
         
     quiz = quiz_by_id(payload.quiz_id)
     if not quiz:

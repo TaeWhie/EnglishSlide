@@ -73,11 +73,7 @@
               <p>생활 영어, 비즈니스, 여행 표현을 학습합니다.</p>
               
               <div class="quiz-start-group" style="display: flex; flex-direction: column; gap: 8px; margin-top: 15px;">
-                <button id="startQuizMixed" class="action-button" type="button" style="width: 100%;">오늘의 퀴즈 (영한+영영 믹스)</button>
-                <div style="display: flex; gap: 8px;">
-                  <button id="startQuizKor" class="action-button outline" type="button" style="flex: 1;">영한 퀴즈</button>
-                  <button id="startQuizEng" class="action-button outline" type="button" style="flex: 1;">영영 퀴즈</button>
-                </div>
+                <button id="startQuizMixed" class="action-button" type="button" style="width: 100%;">퀴즈 선택하기</button>
               </div>
             </div>
             <div class="recommend-card">
@@ -94,9 +90,10 @@
             <h3>학습 모드 선택</h3>
             <p>오늘 학습할 방식을 골라주세요.</p>
             <div class="mode-buttons" style="display: flex; flex-direction: column; gap: 12px; margin-top: 24px;">
-              <button class="action-button mode-btn" data-mode="mixed">오늘의 퀴즈 시작 (영한 + 영영 믹스)</button>
-              <button class="action-button outline mode-btn" data-mode="kor">영한 퀴즈 시작 (English → 한국어)</button>
-              <button class="action-button outline mode-btn" data-mode="eng">영영 퀴즈 시작 (English → English)</button>
+              <button class="action-button outline mode-btn" type="button" data-mode="eng">영영 퀴즈</button>
+              <button class="action-button outline mode-btn" type="button" data-mode="kor">영한 퀴즈</button>
+              <button class="action-button mode-btn" type="button" data-mode="mixed">오늘의 퀴즈</button>
+              <button class="action-button outline mode-btn" type="button" data-mode="incorrect">오답 퀴즈</button>
             </div>
           </div>
 

@@ -11,6 +11,8 @@ const savedProfile = JSON.parse(localStorage.getItem("nrc_user_profile") || "nul
 let pendingGoogleUser = null;
 
 const state = {
+  incorrectWords: JSON.parse(localStorage.getItem("nrc_incorrect_words") || "[]"),
+  quizMode: "mixed",
   user: savedProfile,
   points: savedProfile ? savedProfile.total_points || 0 : 0,
   coupons: [],
@@ -374,6 +376,17 @@ function startTimer() {
 }
 
 async function renderQuiz() {
+  if (state.quizzes.length === 0) {
+    $("#quizModeSelect")?.classList.remove("hidden");
+    $("#quizHead").classList.add("hidden");
+    $("#quizProgressWrap").classList.add("hidden");
+    $("#quizComplete").classList.add("hidden");
+    $("#reviewPanel").classList.add("hidden");
+    $("#quizFeedback").classList.add("hidden");
+    $("#optionList").innerHTML = "";
+    return;
+  }
+
   if (false) { // 무제한 풀기 허용
     state.completed = true;
     clearInterval(state.timerId);
@@ -402,6 +415,7 @@ async function renderQuiz() {
   }
 
   const quiz = state.quizzes[state.current % state.quizzes.length];
+  $("#quizModeSelect")?.classList.add("hidden");
   $("#quizHead").classList.remove("hidden");
   $("#quizProgressWrap").classList.remove("hidden");
   $("#quizCategory").textContent = `${quiz.category} · Level ${quiz.level}`;
@@ -420,6 +434,7 @@ async function renderQuiz() {
 
 async function verifyAnswer(selectedIndex) {
   if (state.locked) return;
+  if (!state.quizzes.length) return;
   state.locked = true;
   clearInterval(state.timerId);
   $$(".option-button").forEach((button) => button.disabled = true);
@@ -428,7 +443,15 @@ async function verifyAnswer(selectedIndex) {
   const selectedAnswer = selectedIndex >= 0 ? quiz.options[selectedIndex] : "시간 초과";
   
   try {
-    const res = await withLoading(
+    const res = state.quizMode === "incorrect" ? {
+      is_correct: selectedIndex === quiz._correct_idx,
+      correct_idx: quiz._correct_idx,
+      explanation: quiz.explanation || "",
+      earned_points: 0,
+      current_total_points: state.points,
+      daily_solved: state.solved,
+      daily_completed: false
+    } : await withLoading(
       "채점 중",
       "정답과 포인트를 확인하고 있습니다.",
       () => apiCall('/quizzes/verify', 'POST', {
@@ -460,7 +483,10 @@ async function verifyAnswer(selectedIndex) {
     $$(".option-button").forEach((button) => {
       const index = Number(button.dataset.index);
       if (index === res.correct_idx) button.classList.add("correct");
-      if (index === selectedIndex && !isCorrect) button.classList.add("wrong");
+      if (index === selectedIndex && !isCorrect) {
+        button.classList.add("wrong");
+        saveIncorrectWord(quiz);
+      }
     });
 
     $("#quizFeedback").innerHTML = `
@@ -493,6 +519,81 @@ function nextQuiz() {
   state.current = (state.current + 1) % state.quizzes.length;
   state.locked = false;
   renderQuiz();
+}
+
+function openQuizModeSelect() {
+  state.quizzes = [];
+  state.completed = false;
+  state.current = 0;
+  state.answers = [];
+  clearInterval(state.timerId);
+  state.locked = false;
+  switchView("quizView");
+  syncRoute("quizView");
+}
+
+async function fetchQuizzesAndStart() {
+  try {
+    state.quizzes = await withLoading(
+      "로딩 중",
+      "문제를 생성하고 있습니다.",
+      () => apiCall(`/quizzes/daily?mode=${state.quizMode}`)
+    );
+    state.completed = false;
+    state.current = 0;
+    state.answers = [];
+    renderQuiz();
+  } catch (e) {
+    showToast("퀴즈를 불러오지 못했습니다.");
+  }
+}
+
+function saveIncorrectWord(quiz) {
+  if (!quiz?.word) return;
+  if (!state.incorrectWords.some((item) => item.word === quiz.word)) {
+    state.incorrectWords.push({
+      word: quiz.word,
+      korean: quiz.korean || quiz.options?.[quiz._correct_idx] || "",
+      english: quiz.english || quiz.question,
+      category: quiz.category,
+      level: quiz.level
+    });
+    localStorage.setItem("nrc_incorrect_words", JSON.stringify(state.incorrectWords));
+  }
+}
+
+function startIncorrectQuiz() {
+  if (state.incorrectWords.length < 4) {
+    showToast("오답 단어가 부족합니다. 최소 4개가 필요합니다.");
+    return;
+  }
+
+  const picked = [...state.incorrectWords].sort(() => 0.5 - Math.random()).slice(0, 10);
+  state.quizzes = picked.map((word) => {
+    const distractors = state.incorrectWords
+      .filter((item) => item.word !== word.word)
+      .sort(() => 0.5 - Math.random())
+      .slice(0, 3)
+      .map((item) => item.korean);
+    while (distractors.length < 3) distractors.push("해당 없음");
+    const options = [word.korean, ...distractors].sort(() => 0.5 - Math.random());
+    return {
+      quiz_id: `incorrect_${word.word}`,
+      word: word.word,
+      question: word.word,
+      options,
+      category: "오답 복습",
+      level: word.level || 1,
+      explanation: word.korean,
+      _correct_idx: options.indexOf(word.korean)
+    };
+  });
+  state.quizMode = "incorrect";
+  state.completed = false;
+  state.current = 0;
+  state.answers = [];
+  switchView("quizView");
+  syncRoute("quizView");
 }
 
 async function renderShop() {
@@ -689,6 +790,10 @@ function bindEvents() {
   });
 
   $$(".nav-item").forEach((item) => item.addEventListener("click", () => {
+    if (item.dataset.view === "quizView") {
+      openQuizModeSelect();
+      return;
+    }
     switchView(item.dataset.view);
     syncRoute(item.dataset.view);
   }));
@@ -697,9 +802,16 @@ function bindEvents() {
       showToast("오늘의 퀴즈는 이미 완료했습니다.");
       return;
     }
-    switchView("quizView");
-    syncRoute("quizView");
+    openQuizModeSelect();
   });
+  $$(".mode-btn").forEach((button) => button.addEventListener("click", () => {
+    if (button.dataset.mode === "incorrect") {
+      startIncorrectQuiz();
+      return;
+    }
+    state.quizMode = button.dataset.mode;
+    fetchQuizzesAndStart();
+  }));
   $("#lockscreenEnabled").addEventListener("change", (event) => {
     state.lockscreen.enabled = event.target.checked;
     saveLockscreenSettings();
