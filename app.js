@@ -401,10 +401,18 @@ function showToast(message) {
 }
 
 function saveIncorrectWord(quiz) {
-  if (!state.incorrectWords.some(w => w.word === quiz.word)) {
-    state.incorrectWords.push({ word: quiz.word, korean: quiz.korean, english: quiz.english, category: quiz.category, level: quiz.level });
-    localStorage.setItem("nrc_incorrect_words", JSON.stringify(state.incorrectWords));
+  const key = String(quiz?.word || "").trim().toLowerCase();
+  if (!key) return;
+  const unique = new Map();
+  state.incorrectWords.forEach((word) => {
+    const existingKey = String(word?.word || "").trim().toLowerCase();
+    if (existingKey && !unique.has(existingKey)) unique.set(existingKey, word);
+  });
+  if (!unique.has(key)) {
+    unique.set(key, { word: quiz.word, korean: quiz.korean, english: quiz.english, category: quiz.category, level: quiz.level });
   }
+  state.incorrectWords = [...unique.values()];
+  localStorage.setItem("nrc_incorrect_words", JSON.stringify(state.incorrectWords));
 }
 
 function renderIncorrectWords() {
