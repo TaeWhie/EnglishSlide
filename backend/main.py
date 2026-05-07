@@ -390,15 +390,20 @@ def claim_quiz_reward(payload: QuizRewardRequest):
     total_earned_today = daily_reward_total_for_user(payload.user_id, today)
 
     # 최근 10개 풀이 기록을 기반으로 보상 계산
-    solved_logs = [
-        doc.to_dict()
-        for doc in firestore_db.collection("solved_logs")
-        .where("user_id", "==", payload.user_id)
-        .where("solved_date", "==", today)
-        .order_by("created_at", direction=firestore.Query.DESCENDING)
-        .limit(10)
-        .stream()
-    ]
+    # Keep reward claims working without requiring a composite Firestore index
+    # on (user_id, solved_date, created_at). A user only solves a small number
+    # of quizzes per day, so sorting in application code is inexpensive here.
+    solved_logs = sorted(
+        (
+            doc.to_dict()
+            for doc in firestore_db.collection("solved_logs")
+            .where("user_id", "==", payload.user_id)
+            .where("solved_date", "==", today)
+            .stream()
+        ),
+        key=lambda log: log.get("created_at", ""),
+        reverse=True,
+    )[:10]
     
     if len(solved_logs) < 10:
         raise HTTPException(status_code=400, detail="daily quiz not completed")
