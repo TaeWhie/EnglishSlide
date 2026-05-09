@@ -183,10 +183,29 @@ h1 {
 
 .topbar {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) auto;
   gap: 12px;
-  align-items: stretch;
   margin-bottom: 22px;
+}
+
+.topbar-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.current-tab-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: 32px;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.topbar-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .today-summary,
@@ -230,15 +249,15 @@ h1 {
 .point-badge {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-width: 142px;
-  padding: 13px 16px;
+  gap: 8px;
+  min-width: 126px;
+  padding: 10px 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
   box-shadow: 0 10px 24px rgba(32, 55, 88, 0.08);
-  align-self: stretch;
   justify-content: center;
+  align-self: flex-start;
 }
 
 .coin {
@@ -407,6 +426,162 @@ h1 {
 .quiz-view {
   max-width: none;
   margin: 0 auto;
+}
+
+.study-shell {
+  display: grid;
+  gap: 14px;
+}
+
+.study-library-card,
+.study-search-card,
+.study-overview-card,
+.study-unit-card {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.study-library-card p,
+.study-overview-card span,
+.study-search-meta,
+.study-word-english,
+.study-word-top span {
+  color: var(--muted);
+}
+
+.study-library-card h3,
+.study-unit-head h3 {
+  margin-bottom: 8px;
+  font-size: 24px;
+}
+
+.study-book-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.study-book-chip {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.study-book-chip.active {
+  border-color: rgba(25, 103, 210, 0.24);
+  background: #edf4ff;
+  color: var(--blue);
+}
+
+.study-book-chip:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.study-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.study-overview-card strong {
+  display: block;
+  margin: 6px 0 8px;
+  font-size: 26px;
+}
+
+.study-search-card {
+  display: grid;
+  gap: 10px;
+}
+
+.study-search-label {
+  font-weight: 800;
+}
+
+.study-search-input {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+  color: var(--ink);
+  background: #fff;
+}
+
+.study-search-meta {
+  margin: 0;
+  font-size: 14px;
+}
+
+.study-unit-list {
+  display: grid;
+  gap: 14px;
+}
+
+.study-unit-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+  margin-bottom: 14px;
+}
+
+.study-unit-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #edf4ff;
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.study-word-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.study-word-card {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.study-word-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+
+.study-word-top strong {
+  font-size: 18px;
+}
+
+.study-word-korean,
+.study-word-english {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.study-word-korean {
+  margin-bottom: 6px;
+  font-weight: 800;
 }
 
 .mode-select-panel {
@@ -877,7 +1052,7 @@ h1 {
   right: 0;
   bottom: 0;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 8px;
   padding: 12px 20px calc(12px + max(10px, env(safe-area-inset-bottom)));
   border: 1px solid var(--line);
@@ -982,6 +1157,10 @@ h1 {
     grid-template-columns: 1fr;
   }
 
+  .study-word-list {
+    grid-template-columns: 1fr;
+  }
+
   .quiz-head,
   .shop-head {
     grid-template-columns: 1fr;
@@ -994,9 +1173,21 @@ h1 {
   }
 
   .topbar {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(86px, 0.72fr);
     gap: 6px;
     margin-bottom: 14px;
+  }
+
+  .topbar-head {
+    gap: 8px;
+  }
+
+  .current-tab-title {
+    font-size: 28px;
+  }
+
+  .topbar-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
   }
 
   .today-summary,
@@ -1045,7 +1236,28 @@ h1 {
 
   .nav-item {
     min-height: 42px;
-    font-size: 13px;
+    font-size: 12px;
+  }
+
+  .study-overview-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .study-library-card,
+  .study-search-card,
+  .study-overview-card,
+  .study-unit-card {
+    padding: 14px;
+  }
+
+  .study-library-card h3,
+  .study-unit-head h3 {
+    font-size: 20px;
+  }
+
+  .study-word-top strong {
+    font-size: 16px;
   }
 
   .daily-card h3,

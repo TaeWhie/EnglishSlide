@@ -1,3 +1,7 @@
 <resources>
     <string name="google_web_client_id">358180637858-1cc70si61cjnftpeckfnvqps7onbbr0q.apps.googleusercontent.com</string>
+    <string name="admob_app_id">ca-app-pub-3078473154541994~4348138841</string>
+    <string name="admob_rewarded_quiz_unit_id">ca-app-pub-3078473154541994/7530659783</string>
+    <string name="admob_retry_interstitial_unit_id">ca-app-pub-3940256099942544/1033173712</string>
+    <string name="admob_native_footer_unit_id">ca-app-pub-3940256099942544/2247696110</string>
 </resources>

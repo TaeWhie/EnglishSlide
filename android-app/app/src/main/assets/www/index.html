@@ -38,21 +38,26 @@
     <main id="appShell" class="app-shell hidden">
       <section class="workspace">
         <header class="topbar">
-          <div class="today-summary">
-            <p class="eyebrow">오늘의 학습</p>
-            <strong id="topQuizStatus">0/10 완료</strong>
-            <div class="top-progress" aria-label="오늘의 퀴즈 진행률">
-              <span id="topProgressFill"></span>
+          <div class="topbar-head">
+            <h1 id="currentTabTitle" class="current-tab-title">홈</h1>
+            <div class="point-badge" aria-label="현재 보유 포인트">
+              <span class="coin"></span>
+              <strong id="totalPoints">1,250P</strong>
             </div>
           </div>
-          <div class="goal-summary">
-            <p class="eyebrow">다음 교환 목표</p>
-            <strong id="nextGoal">5천원 금액권</strong>
-            <span id="goalRemain">3,750P 남음</span>
-          </div>
-          <div class="point-badge" aria-label="현재 보유 포인트">
-            <span class="coin"></span>
-            <strong id="totalPoints">1,250P</strong>
+          <div class="topbar-summary">
+            <div class="today-summary">
+              <p class="eyebrow">오늘의 학습</p>
+              <strong id="topQuizStatus">아직 시작 전</strong>
+              <div class="top-progress" aria-label="오늘의 퀴즈 진행률">
+                <span id="topProgressFill"></span>
+              </div>
+            </div>
+            <div class="goal-summary">
+              <p class="eyebrow">다음 교환 목표</p>
+              <strong id="nextGoal">5천원 금액권</strong>
+              <span id="goalRemain">3,750P 남음</span>
+            </div>
           </div>
         </header>
 
@@ -65,13 +70,13 @@
             </article>
             <article class="metric">
               <p>퀴즈 진행</p>
-              <strong><span id="quizSolved">0</span>/10</strong>
-              <span>정답률 기반 난이도 조정</span>
+              <strong><span id="quizSolved">0</span>문제</strong>
+              <span id="quizSolvedBreakdown">아직 푼 문제가 없습니다.</span>
             </article>
             <article class="metric">
               <p>오늘 적립 가능</p>
-              <strong>1,000P</strong>
-              <span>퀴즈와 보상 광고로 적립</span>
+              <strong id="rewardAvailablePoints">1,000P</strong>
+              <span id="rewardAvailableMeta">보상 퀴즈 기준 남은 적립 가능 포인트</span>
             </article>
           </div>
 
@@ -135,6 +140,49 @@
           <div id="quizFeedback" class="feedback-panel hidden"></div>
         </section>
 
+        <section id="studyView" class="view study-view" data-title="학습">
+          <div class="study-shell">
+            <section class="study-library-card">
+              <div>
+                <p class="eyebrow">Word Library</p>
+                <h3>전체 단어 학습</h3>
+                <p>지금은 기본 단어장을 제공하고, 나중에 책이 추가되면 여기서 골라서 공부할 수 있게 준비해둘게요.</p>
+              </div>
+              <div class="study-book-list" id="studyBookList">
+                <button class="study-book-chip active" type="button" data-book="default">기본 단어장</button>
+                <button class="study-book-chip" type="button" disabled>다음 책 준비 중</button>
+              </div>
+            </section>
+
+            <section class="study-overview-grid">
+              <article class="study-overview-card">
+                <p class="eyebrow">단어 수</p>
+                <strong id="studyWordCount">0개</strong>
+                <span>전체 수록 단어</span>
+              </article>
+              <article class="study-overview-card">
+                <p class="eyebrow">유닛</p>
+                <strong id="studyUnitCount">0개</strong>
+                <span>학습 가능한 챕터</span>
+              </article>
+            </section>
+
+            <section class="study-search-card">
+              <label class="study-search-label" for="studySearchInput">단어 찾기</label>
+              <input
+                id="studySearchInput"
+                class="study-search-input"
+                type="search"
+                placeholder="영단어, 뜻, 품사로 검색"
+                autocomplete="off"
+              />
+              <p id="studySearchMeta" class="study-search-meta">전체 단어를 불러오는 중입니다.</p>
+            </section>
+
+            <section id="studyUnitList" class="study-unit-list"></section>
+          </div>
+        </section>
+
         <section id="shopView" class="view" data-title="상점">
           <div class="shop-head">
             <div>
@@ -187,8 +235,8 @@
               <p class="eyebrow">My Stats</p>
               <h3>이용 현황</h3>
               <div class="report-row">
-                <span>오늘 퀴즈</span>
-                <strong id="profileQuizState">완료</strong>
+                <span>오늘 푼 문제</span>
+                <strong id="profileQuizState">0문제</strong>
               </div>
               <div class="report-row">
                 <span>보유 쿠폰</span>
@@ -219,6 +267,7 @@
       <nav class="bottom-nav" aria-label="주요 화면">
         <button class="nav-item active" type="button" data-view="homeView">홈</button>
         <button class="nav-item" type="button" data-view="quizView">퀴즈</button>
+        <button class="nav-item" type="button" data-view="studyView">학습</button>
         <button class="nav-item" type="button" data-view="shopView">상점</button>
         <button class="nav-item" type="button" data-view="reportView">마이</button>
       </nav>

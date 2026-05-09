@@ -7,9 +7,26 @@ const API_BASE = window.location.hostname === "127.0.0.1" || window.location.hos
 const todayKey = new Date().toISOString().slice(0, 10);
 const quizSessionKey = "nrc_active_quiz_session";
 const savedDaily = JSON.parse(localStorage.getItem("nrc_daily_quiz") || "{}");
-const initialDaily = savedDaily.date === todayKey ? savedDaily : { date: todayKey, solved: 0, current: 0, completed: false, answers: [] };
+const initialDaily = savedDaily.date === todayKey ? savedDaily : { date: todayKey, solved: 0, current: 0, completed: false, answers: [], modeCounts: null };
 const savedProfile = JSON.parse(localStorage.getItem("nrc_user_profile") || "null");
 let pendingGoogleUser = null;
+
+function createEmptyModeCounts() {
+  return { eng: 0, kor: 0, mixed: 0, incorrect: 0 };
+}
+
+function normalizeModeCounts(rawCounts, fallbackSolved = 0) {
+  const counts = createEmptyModeCounts();
+  if (rawCounts && typeof rawCounts === "object") {
+    for (const key of Object.keys(counts)) {
+      const value = Number(rawCounts[key] || 0);
+      counts[key] = Number.isFinite(value) && value > 0 ? value : 0;
+    }
+  } else if (fallbackSolved > 0) {
+    counts.mixed = fallbackSolved;
+  }
+  return counts;
+}
 
 const state = {
   incorrectWords: JSON.parse(localStorage.getItem("nrc_incorrect_words") || "[]"),
@@ -24,6 +41,11 @@ const state = {
   current: initialDaily.current,
   completed: initialDaily.completed,
   answers: Array.isArray(initialDaily.answers) ? initialDaily.answers : [],
+  modeCounts: normalizeModeCounts(initialDaily.modeCounts, initialDaily.solved),
+  rewardStatus: { remaining: 1000, cap: 1000, earned: 0 },
+  studyBook: "default",
+  studyWords: [],
+  studySearch: "",
   locked: false,
   timer: 15,
   timerId: null,
@@ -102,20 +124,160 @@ function formatNumber(value) {
   return new Intl.NumberFormat("ko-KR").format(value);
 }
 
+function getSolvedBreakdownText() {
+  const labels = [
+    ["eng", "영영"],
+    ["kor", "영한"],
+    ["mixed", "오늘의 퀴즈"],
+    ["incorrect", "오답"]
+  ];
+  const parts = labels
+    .map(([key, label]) => {
+      const count = Number(state.modeCounts?.[key] || 0);
+      return count > 0 ? `${label} ${count}` : "";
+    })
+    .filter(Boolean);
+  return parts.length ? parts.join(" · ") : "아직 푼 문제가 없습니다.";
+}
+
+function renderRewardAvailability() {
+  const pointsNode = $("#rewardAvailablePoints");
+  const metaNode = $("#rewardAvailableMeta");
+  if (!pointsNode || !metaNode) return;
+
+  const remaining = Number(state.rewardStatus?.remaining || 0);
+  const earned = Number(state.rewardStatus?.earned || 0);
+  pointsNode.textContent = `${formatNumber(remaining)}P`;
+  metaNode.textContent = earned > 0
+    ? `오늘 ${formatNumber(earned)}P 적립, 추가로 ${formatNumber(remaining)}P 가능`
+    : "보상 퀴즈 기준 남은 적립 가능 포인트";
+}
+
+async function loadStudyWords() {
+  if (state.studyWords.length) return state.studyWords;
+  const words = await fetch("./data/words.json").then((res) => {
+    if (!res.ok) throw new Error("단어장을 불러오지 못했습니다.");
+    return res.json();
+  });
+  state.studyWords = Array.isArray(words) ? words : [];
+  return state.studyWords;
+}
+
+function getFilteredStudyWords() {
+  const query = state.studySearch.trim().toLowerCase();
+  if (!query) return state.studyWords;
+  return state.studyWords.filter((item) => {
+    return [item.word, item.korean, item.english, item.part]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(query));
+  });
+}
+
+function renderStudyView() {
+  const unitList = $("#studyUnitList");
+  const wordCount = $("#studyWordCount");
+  const unitCount = $("#studyUnitCount");
+  const searchMeta = $("#studySearchMeta");
+  if (!unitList || !wordCount || !unitCount || !searchMeta) return;
+
+  const filteredWords = getFilteredStudyWords();
+  const grouped = filteredWords.reduce((map, item) => {
+    const unit = Number(item.unit || 0);
+    if (!map.has(unit)) map.set(unit, []);
+    map.get(unit).push(item);
+    return map;
+  }, new Map());
+
+  const sortedUnits = [...grouped.entries()].sort((a, b) => a[0] - b[0]);
+  wordCount.textContent = `${formatNumber(filteredWords.length)}개`;
+  unitCount.textContent = `${formatNumber(sortedUnits.length)}개`;
+  searchMeta.textContent = state.studySearch.trim()
+    ? `${formatNumber(filteredWords.length)}개 단어가 검색되었습니다.`
+    : `기본 단어장 ${formatNumber(state.studyWords.length)}개 단어를 유닛별로 볼 수 있습니다.`;
+
+  if (!filteredWords.length) {
+    unitList.innerHTML = `<div class="empty-state">검색 결과가 없습니다.</div>`;
+    return;
+  }
+
+  unitList.innerHTML = sortedUnits.map(([unit, words]) => `
+    <article class="study-unit-card">
+      <div class="study-unit-head">
+        <div>
+          <p class="eyebrow">Unit ${unit}</p>
+          <h3>${formatNumber(words.length)}개 단어</h3>
+        </div>
+        <span class="study-unit-badge">${formatNumber(words.length)} words</span>
+      </div>
+      <div class="study-word-list">
+        ${words.map((word) => `
+          <div class="study-word-card">
+            <div class="study-word-top">
+              <strong>${word.word}</strong>
+              <span>${word.part || ""}</span>
+            </div>
+            <p class="study-word-korean">${word.korean || ""}</p>
+            <p class="study-word-english">${word.english || ""}</p>
+          </div>
+        `).join("")}
+      </div>
+    </article>
+  `).join("");
+}
+
+async function ensureStudyView() {
+  try {
+    await loadStudyWords();
+    renderStudyView();
+  } catch (err) {
+    const unitList = $("#studyUnitList");
+    const searchMeta = $("#studySearchMeta");
+    if (searchMeta) searchMeta.textContent = err.message || "단어장을 불러오지 못했습니다.";
+    if (unitList) {
+      unitList.innerHTML = `<div class="empty-state">단어장을 불러오지 못했습니다.</div>`;
+    }
+  }
+}
+
+async function refreshRewardStatus() {
+  if (!state.user?.user_id) {
+    state.rewardStatus = { remaining: 1000, cap: 1000, earned: 0 };
+    renderRewardAvailability();
+    return;
+  }
+
+  try {
+    const status = await apiCall(`/quizzes/reward-status?user_id=${encodeURIComponent(state.user.user_id)}`);
+    state.rewardStatus = {
+      remaining: Number(status.remaining_reward_points || 0),
+      cap: Number(status.daily_reward_cap || 1000),
+      earned: Number(status.daily_total_earned || 0)
+    };
+  } catch (err) {
+    state.rewardStatus = { remaining: 0, cap: 1000, earned: 0 };
+  }
+
+  renderRewardAvailability();
+}
+
 function updateStats() {
   $("#totalPoints").textContent = `${formatNumber(state.points)}P`;
-  $("#quizSolved").textContent = state.solved;
-  $("#topQuizStatus").textContent = state.completed ? "오늘 완료" : `${state.solved}/10 완료`;
-  $("#topProgressFill").style.width = `${Math.min(100, state.solved * 10)}%`;
+  const totalSolvedToday = Object.values(state.modeCounts || {}).reduce((sum, count) => sum + Number(count || 0), 0);
+  $("#quizSolved").textContent = totalSolvedToday;
+  $("#quizSolvedBreakdown").textContent = getSolvedBreakdownText();
+  $("#topQuizStatus").textContent = totalSolvedToday > 0 ? `${totalSolvedToday}문제 학습` : "아직 시작 전";
+  $("#topProgressFill").style.width = `${Math.min(100, totalSolvedToday * 5)}%`;
   updateProfileStats();
   updateGoalSummary();
+  renderRewardAvailability();
   $("#todayRevenue").textContent = `${formatNumber(state.totalRevenue)}원`;
   localStorage.setItem("nrc_daily_quiz", JSON.stringify({
     date: todayKey,
     solved: state.solved,
     current: state.current,
     completed: state.completed,
-    answers: state.answers
+    answers: state.answers,
+    modeCounts: state.modeCounts
   }));
   updateQuizEntryState();
   renderCoupons();
@@ -274,7 +436,8 @@ function updateProfileStats() {
   const couponCount = $("#profileCouponCount");
   const profilePoints = $("#profilePoints");
   if (!quizState || !couponCount || !profilePoints) return;
-  quizState.textContent = state.completed ? "완료" : `${state.solved}/10`;
+  const totalSolvedToday = Object.values(state.modeCounts || {}).reduce((sum, count) => sum + Number(count || 0), 0);
+  quizState.textContent = `${totalSolvedToday}문제`;
   couponCount.textContent = `${state.coupons.length}개`;
   profilePoints.textContent = `${formatNumber(state.points)}P`;
 }
@@ -320,11 +483,27 @@ function showToast(message) {
   showToast.timeout = setTimeout(() => toast.classList.add("hidden"), 2600);
 }
 
+function updateCurrentTabTitle(viewId) {
+  const title = $("#currentTabTitle");
+  if (!title) return;
+  const labels = {
+    homeView: "\uD648",
+    quizView: "\uD034\uC988",
+    studyView: "\uD559\uC2B5",
+    shopView: "\uC0C1\uC810",
+    reportView: "\uB9C8\uC774"
+  };
+  title.textContent = labels[viewId] || "\uD648";
+}
+
 function switchView(viewId) {
   $$(".view").forEach((view) => view.classList.toggle("active", view.id === viewId));
   $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === viewId));
+  updateCurrentTabTitle(viewId);
   if (viewId === "quizView") {
     renderQuiz();
+  } else if (viewId === "studyView") {
+    ensureStudyView();
   } else if (viewId === "reportView") {
     renderCoupons();
     renderLockscreenSettings();
@@ -341,6 +520,7 @@ function syncRoute(viewId) {
   const routeMap = {
     homeView: "home",
     quizView: "quiz",
+    studyView: "study",
     shopView: "shop",
     reportView: "profile"
   };
@@ -354,6 +534,7 @@ function routeFromHash() {
   const viewMap = {
     home: "homeView",
     quiz: "quizView",
+    study: "studyView",
     shop: "shopView",
     profile: "reportView"
   };
@@ -546,6 +727,8 @@ async function verifyAnswer(selectedIndex) {
 
     const existingAnswer = state.answers.find((answer) => answer.quizIndex === state.current);
     if (!existingAnswer) {
+      if (!state.modeCounts[state.quizMode]) state.modeCounts[state.quizMode] = 0;
+      state.modeCounts[state.quizMode] += 1;
       state.answers.push({
         quizIndex: state.current,
         question: quiz.question,
@@ -619,6 +802,7 @@ async function claimReward() {
       })
     );
     state.points = res.current_total_points;
+    await refreshRewardStatus();
     updateStats();
     showToast(res.reward_points > 0 ? `${res.reward_points}P가 적립되었습니다.` : "적립 가능한 포인트가 없습니다.");
     clearQuizSession();
@@ -665,6 +849,12 @@ async function updateRewardControls() {
   try {
     const status = await apiCall(`/quizzes/reward-status?user_id=${encodeURIComponent(state.user.user_id)}`);
     const remaining = Number(status.remaining_reward_points || 0);
+    state.rewardStatus = {
+      remaining,
+      cap: Number(status.daily_reward_cap || 1000),
+      earned: Number(status.daily_total_earned || 0)
+    };
+    renderRewardAvailability();
     if (remaining <= 0) {
       rewardButton.textContent = "오늘 보상 한도 도달";
       rewardButton.disabled = true;
@@ -991,6 +1181,18 @@ function bindEvents() {
   $("#skipRewardButton")?.addEventListener("click", openQuizModeSelect);
   $("#showIncorrectNoteButton")?.addEventListener("click", toggleIncorrectNote);
   $("#startIncorrectQuiz")?.addEventListener("click", startIncorrectQuiz);
+  $("#studySearchInput")?.addEventListener("input", (event) => {
+    state.studySearch = event.target.value || "";
+    renderStudyView();
+  });
+  $$(".study-book-chip").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (button.disabled) return;
+      state.studyBook = button.dataset.book || "default";
+      $$(".study-book-chip").forEach((chip) => chip.classList.toggle("active", chip === button));
+      renderStudyView();
+    });
+  });
   $("#lockscreenEnabled").addEventListener("change", (event) => {
     state.lockscreen.enabled = event.target.checked;
     saveLockscreenSettings();
@@ -1025,12 +1227,15 @@ async function init() {
     await Promise.all([
       renderShop(),
       renderCoupons(),
-      renderLockscreenSettings()
+      renderLockscreenSettings(),
+      refreshRewardStatus(),
+      loadStudyWords()
     ]);
     switchView(routeFromHash());
   } else {
     showLogin();
     renderShop();
+    loadStudyWords().catch(() => {});
   }
   updateStats();
 
