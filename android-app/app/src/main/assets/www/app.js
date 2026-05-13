@@ -3,8 +3,16 @@
 const API_BASE = window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost"
   ? "http://127.0.0.1:8000/v1"
   : "https://nrc-backend-llgx.onrender.com/v1";
+const UNIT_ROTATION_START_DATE = "2026-05-05";
 
-const todayKey = new Date().toISOString().slice(0, 10);
+function formatLocalDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+const todayKey = formatLocalDateKey(new Date());
 const quizSessionKey = "nrc_active_quiz_session";
 const savedDaily = JSON.parse(localStorage.getItem("nrc_daily_quiz") || "{}");
 const initialDaily = savedDaily.date === todayKey ? savedDaily : { date: todayKey, solved: 0, current: 0, completed: false, answers: [], modeCounts: null };
@@ -43,8 +51,13 @@ const state = {
   answers: Array.isArray(initialDaily.answers) ? initialDaily.answers : [],
   modeCounts: normalizeModeCounts(initialDaily.modeCounts, initialDaily.solved),
   rewardStatus: { remaining: 1000, cap: 1000, earned: 0 },
-  studyBook: "default",
-  studyWords: [],
+  quizActivity: null,
+  studyLibrary: null,
+  quizWordUnits: null,
+  quizSourceMap: null,
+  studySeries: "1000",
+  studyVolume: "",
+  studyUnitKey: "",
   studySearch: "",
   locked: false,
   timer: 15,
@@ -52,6 +65,38 @@ const state = {
   questionDeadline: null,
   totalRevenue: 1250400
 };
+
+let rewardClaimPending = false;
+let retryInterstitialPending = false;
+let quizConfirmResolver = null;
+
+function getTotalSolvedFromDaily(daily) {
+  if (!daily || typeof daily !== "object") return 0;
+  const counts = normalizeModeCounts(daily.modeCounts, daily.solved);
+  const counted = Object.values(counts).reduce((sum, count) => sum + Number(count || 0), 0);
+  return Math.max(Number(daily.solved || 0), counted);
+}
+
+function readActivityHistory() {
+  return JSON.parse(localStorage.getItem("nrc_quiz_activity_history") || "{}");
+}
+
+function writeActivityHistory(history) {
+  localStorage.setItem("nrc_quiz_activity_history", JSON.stringify(history || {}));
+}
+
+function rememberActivityDay(dateKey, count) {
+  if (!dateKey) return;
+  const safeCount = Math.max(0, Number(count || 0));
+  if (safeCount <= 0) return;
+  const history = readActivityHistory();
+  history[dateKey] = Math.max(Number(history[dateKey] || 0), safeCount);
+  writeActivityHistory(history);
+}
+
+if (savedDaily.date && savedDaily.date !== todayKey) {
+  rememberActivityDay(savedDaily.date, getTotalSolvedFromDaily(savedDaily));
+}
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -149,92 +194,442 @@ function renderRewardAvailability() {
   const earned = Number(state.rewardStatus?.earned || 0);
   pointsNode.textContent = `${formatNumber(remaining)}P`;
   metaNode.textContent = earned > 0
-    ? `오늘 ${formatNumber(earned)}P 적립, 추가로 ${formatNumber(remaining)}P 가능`
-    : "보상 퀴즈 기준 남은 적립 가능 포인트";
+    ? `\uC624\uB298 ${formatNumber(earned)}P \uC801\uB9BD, \uCD94\uAC00\uB85C ${formatNumber(remaining)}P \uAC00\uB2A5`
+    : "\uBCF4\uC0C1 \uD034\uC988 \uAE30\uC900 \uB0A8\uC740 \uC801\uB9BD \uAC00\uB2A5 \uD3EC\uC778\uD2B8";
 }
 
-async function loadStudyWords() {
-  if (state.studyWords.length) return state.studyWords;
-  const words = await fetch("./data/words.json").then((res) => {
-    if (!res.ok) throw new Error("단어장을 불러오지 못했습니다.");
-    return res.json();
+function formatShortDateLabel(dateText) {
+  if (!dateText) return "";
+  const date = new Date(`${dateText}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return dateText;
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+function getActivityIntensity(count, maxCount) {
+  if (count <= 0 || maxCount <= 0) return 0;
+  const ratio = count / maxCount;
+  if (ratio >= 0.75) return 4;
+  if (ratio >= 0.5) return 3;
+  if (ratio >= 0.25) return 2;
+  return 1;
+}
+
+function renderActivityCalendar() {
+  const card = $("#activityCalendarCard");
+  if (!card) return;
+
+  const activityDays = Array.isArray(state.quizActivity?.days) ? state.quizActivity.days : [];
+  const history = readActivityHistory();
+  const countsByDate = new Map(Object.entries(history).map(([date, count]) => [date, Number(count || 0)]));
+  activityDays.forEach((day) => {
+    if (!day.date) return;
+    countsByDate.set(day.date, Math.max(Number(countsByDate.get(day.date) || 0), Number(day.count || 0)));
   });
-  state.studyWords = Array.isArray(words) ? words : [];
-  return state.studyWords;
+  const totalSolvedToday = Object.values(state.modeCounts || {}).reduce((sum, count) => sum + Number(count || 0), 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const slots = [];
+
+  for (let offset = -6; offset <= 0; offset += 1) {
+    const date = new Date(today);
+    date.setDate(today.getDate() + offset);
+    const key = formatLocalDateKey(date);
+    const isToday = offset === 0;
+    const count = countsByDate.has(key)
+      ? countsByDate.get(key)
+      : (isToday ? totalSolvedToday : 0);
+    const solved = count > 0;
+    const label = `${date.getMonth() + 1}/${date.getDate()}`;
+    const classes = ["calendar-slot"];
+    if (isToday) classes.push("is-today");
+    if (solved) classes.push("is-solved");
+    slots.push(`
+      <article class="${classes.join(" ")}" aria-label="${key} ${solved ? "O" : "X"}">
+        <span class="calendar-slot-date">${label}</span>
+        <strong class="calendar-slot-mark">${solved ? "O" : "X"}</strong>
+      </article>
+    `);
+  }
+
+  card.innerHTML = `
+    <div class="calendar-card-head simple">
+      <div class="calendar-card-copy">
+        <strong>\uD034\uC988 \uCE98\uB9B0\uB354</strong>
+      </div>
+    </div>
+    <div class="calendar-strip">${slots.join("")}</div>
+  `;
+}
+
+async function loadStudyLibrary() {
+  if (state.studyLibrary) return state.studyLibrary;
+  const payload = await new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("GET", "file:///android_asset/www/data/study_library.json", true);
+    request.overrideMimeType("application/json");
+    request.onload = () => {
+      if (request.status === 0 || (request.status >= 200 && request.status < 300)) {
+        try {
+          resolve(JSON.parse(request.responseText));
+        } catch (err) {
+          reject(new Error("\uB2E8\uC5B4 \uB370\uC774\uD130 \uD615\uC2DD\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."));
+        }
+      } else {
+        reject(new Error("\uB2E8\uC5B4 \uB370\uC774\uD130\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4."));
+      }
+    };
+    request.onerror = () => reject(new Error("\uB2E8\uC5B4 \uB370\uC774\uD130\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4."));
+    request.send();
+  });
+  state.studyLibrary = payload && Array.isArray(payload.series) ? payload : { series: [] };
+  return state.studyLibrary;
+}
+
+async function loadQuizWordUnits() {
+  if (state.quizWordUnits) return state.quizWordUnits;
+  const payload = await new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("GET", "file:///android_asset/www/data/words.json", true);
+    request.overrideMimeType("application/json");
+    request.onload = () => {
+      if (request.status === 0 || (request.status >= 200 && request.status < 300)) {
+        try {
+          resolve(JSON.parse(request.responseText));
+        } catch {
+          reject(new Error("quiz words parse failed"));
+        }
+      } else {
+        reject(new Error("quiz words load failed"));
+      }
+    };
+    request.onerror = () => reject(new Error("quiz words load failed"));
+    request.send();
+  });
+  state.quizWordUnits = Array.isArray(payload) ? payload : [];
+  return state.quizWordUnits;
+}
+
+function getTodayBackendUnit(maxUnit) {
+  const start = new Date(`${UNIT_ROTATION_START_DATE}T00:00:00`);
+  const today = new Date();
+  start.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  const dayOffset = Math.floor((today.getTime() - start.getTime()) / (24 * 60 * 60 * 1000));
+  return ((dayOffset % Math.max(1, maxUnit)) + Math.max(1, maxUnit)) % Math.max(1, maxUnit) + 1;
+}
+
+async function ensureQuizSourceMap() {
+  if (state.quizSourceMap) return state.quizSourceMap;
+  const [quizWords, studyLibrary] = await Promise.all([loadQuizWordUnits(), loadStudyLibrary()]);
+  const backendUnits = new Map();
+  quizWords.forEach((word) => {
+    const unit = Number(word.unit || 1);
+    if (!backendUnits.has(unit)) backendUnits.set(unit, new Set());
+    backendUnits.get(unit).add(String(word.word || "").toLowerCase());
+  });
+
+  const studyUnits = [];
+  (studyLibrary.series || []).forEach((series) => {
+    (series.books || []).forEach((book) => {
+      (book.units || []).forEach((unit) => {
+        studyUnits.push({
+          seriesId: series.id,
+          seriesTitle: series.title,
+          volume: book.volume,
+          bookTitle: book.title,
+          unit: unit.unit,
+          words: new Set((unit.words || []).map((entry) => String(entry.word || "").toLowerCase()))
+        });
+      });
+    });
+  });
+
+  const resolvedMap = new Map();
+  backendUnits.forEach((wordSet, backendUnit) => {
+    let bestMatch = null;
+    studyUnits.forEach((candidate) => {
+      let overlap = 0;
+      wordSet.forEach((word) => {
+        if (candidate.words.has(word)) overlap += 1;
+      });
+      if (!bestMatch || overlap > bestMatch.overlap) {
+        bestMatch = { ...candidate, overlap };
+      }
+    });
+    if (bestMatch) resolvedMap.set(backendUnit, bestMatch);
+  });
+  state.quizSourceMap = resolvedMap;
+  return resolvedMap;
+}
+
+async function renderQuizSourceCard() {
+  const panel = document.getElementById("quizModeSelect");
+  if (!panel) return;
+  let card = document.getElementById("quizSourceCard");
+  if (!card) {
+    card = document.createElement("article");
+    card.id = "quizSourceCard";
+    card.className = "quiz-source-card";
+    card.innerHTML = `
+      <p class="eyebrow">오늘 출제 범위</p>
+      <strong id="quizSourceTitle">단어장을 확인하는 중입니다.</strong>
+      <p id="quizSourceCopy">오늘 퀴즈 출제 범위를 불러오고 있습니다.</p>
+    `;
+    const buttons = panel.querySelector(".mode-buttons");
+    panel.insertBefore(card, buttons || null);
+  }
+
+  try {
+    const sourceMap = await ensureQuizSourceMap();
+    const maxUnit = Math.max(1, ...sourceMap.keys());
+    const todayUnit = getTodayBackendUnit(maxUnit);
+    const source = sourceMap.get(todayUnit);
+    const title = document.getElementById("quizSourceTitle");
+    const copy = document.getElementById("quizSourceCopy");
+    if (!source || !title || !copy) return;
+    title.textContent = `${source.seriesId} · ${source.volume}권 · Unit ${source.unit}`;
+    copy.textContent = `${source.bookTitle} 범위에서 오늘 퀴즈가 출제됩니다.`;
+  } catch {
+    const title = document.getElementById("quizSourceTitle");
+    const copy = document.getElementById("quizSourceCopy");
+    if (title) title.textContent = "출제 범위를 불러오지 못했습니다.";
+    if (copy) copy.textContent = "잠시 후 다시 시도해주세요.";
+  }
+}
+
+function getCurrentStudySeries() {
+  const seriesList = state.studyLibrary?.series || [];
+  return seriesList.find((series) => series.id === state.studySeries) || seriesList[0] || null;
+}
+
+function getCurrentStudyBooks() {
+  const series = getCurrentStudySeries();
+  return Array.isArray(series?.books) ? series.books : [];
+}
+
+function getCurrentStudyBook() {
+  const books = getCurrentStudyBooks();
+  return books.find((book) => String(book.volume) === String(state.studyVolume)) || books[0] || null;
+}
+
+function getCurrentStudyUnits() {
+  const series = getCurrentStudySeries();
+  const book = getCurrentStudyBook();
+  if (!series || !book) return [];
+  return book.units.map((unit) => ({
+    ...unit,
+    volume: book.volume,
+    bookTitle: book.title,
+    unitKey: `${series.id}:${book.volume}:${unit.unit}`
+  }));
+}
+
+function getCurrentStudyUnit() {
+  const units = getCurrentStudyUnits();
+  return units.find((unit) => unit.unitKey === state.studyUnitKey) || units[0] || null;
 }
 
 function getFilteredStudyWords() {
   const query = state.studySearch.trim().toLowerCase();
-  if (!query) return state.studyWords;
-  return state.studyWords.filter((item) => {
-    return [item.word, item.korean, item.english, item.part]
+  if (!query) {
+    const unit = getCurrentStudyUnit();
+    return Array.isArray(unit?.words) ? unit.words : [];
+  }
+
+  const allSeries = state.studyLibrary?.series || [];
+  const searchPool = allSeries.flatMap((series) =>
+    (series.books || []).flatMap((book) =>
+      (book.units || []).flatMap((unit) =>
+        (unit.words || []).map((word) => ({
+          ...word,
+          seriesId: series.id,
+          seriesTitle: series.title,
+          volume: book.volume,
+          unit: unit.unit,
+          bookTitle: book.title
+        }))
+      )
+    )
+  );
+
+  return searchPool.filter((item) => {
+    return [item.word, item.korean, item.english, item.part, item.example]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(query));
   });
 }
 
+function applyStudyStaticLabels() {
+  const titleMap = {
+    studyIntroTitle: "\uCC45\uBCC4 \uB2E8\uC5B4 \uD559\uC2B5",
+    studyIntroCopy: "\uCC45\uC744 \uBA3C\uC800 \uACE0\uB974\uACE0, \uAD8C\uACFC \uC720\uB2DB\uC744 \uCC28\uB840\uB300\uB85C \uC120\uD0DD\uD574\uC11C \uD574\uB2F9 \uC720\uB2DB\uC758 \uB2E8\uC5B4\uB97C \uC77D\uC5B4\uBCF4\uC138\uC694.",
+    studyBookPickerTitle: "\uAD8C \uC120\uD0DD",
+    studyUnitPickerTitle: "\uC720\uB2DB \uC120\uD0DD",
+    studySearchLabel: "\uB2E8\uC5B4 \uCC3E\uAE30"
+  };
+  Object.entries(titleMap).forEach(([id, text]) => {
+    const node = document.getElementById(id);
+    if (node) node.textContent = text;
+  });
+
+  const input = $("#studySearchInput");
+  if (input) {
+    input.placeholder = "\uC804\uCCB4 \uB2E8\uC5B4\uC5D0\uC11C \uAC80\uC0C9";
+  }
+}
+
 function renderStudyView() {
-  const unitList = $("#studyUnitList");
-  const wordCount = $("#studyWordCount");
+  applyStudyStaticLabels();
+  const unitList = $("#studyResultsSection");
+  const bookCount = $("#studyBookCount");
   const unitCount = $("#studyUnitCount");
   const searchMeta = $("#studySearchMeta");
-  if (!unitList || !wordCount || !unitCount || !searchMeta) return;
+  const bookTabs = $("#studyBookTabs");
+  const unitTabs = $("#studyUnitTabs");
+  if (!unitList || !bookCount || !unitCount || !searchMeta || !bookTabs || !unitTabs) return;
 
-  const filteredWords = getFilteredStudyWords();
-  const grouped = filteredWords.reduce((map, item) => {
-    const unit = Number(item.unit || 0);
-    if (!map.has(unit)) map.set(unit, []);
-    map.get(unit).push(item);
-    return map;
-  }, new Map());
+  const series = getCurrentStudySeries();
+  const books = getCurrentStudyBooks();
+  const selectedBook = getCurrentStudyBook();
+  const units = getCurrentStudyUnits();
+  const selectedUnit = getCurrentStudyUnit();
+  $$(".study-book-chip").forEach((chip) => {
+    chip.classList.toggle("active", chip.dataset.series === (series?.id || state.studySeries));
+  });
 
-  const sortedUnits = [...grouped.entries()].sort((a, b) => a[0] - b[0]);
-  wordCount.textContent = `${formatNumber(filteredWords.length)}개`;
-  unitCount.textContent = `${formatNumber(sortedUnits.length)}개`;
-  searchMeta.textContent = state.studySearch.trim()
-    ? `${formatNumber(filteredWords.length)}개 단어가 검색되었습니다.`
-    : `기본 단어장 ${formatNumber(state.studyWords.length)}개 단어를 유닛별로 볼 수 있습니다.`;
-
-  if (!filteredWords.length) {
-    unitList.innerHTML = `<div class="empty-state">검색 결과가 없습니다.</div>`;
+  if (!series || !selectedBook || !selectedUnit) {
+    bookCount.textContent = "0\uAD8C";
+    unitCount.textContent = "0\uAC1C";
+    bookTabs.innerHTML = "";
+    unitTabs.innerHTML = "";
+    unitList.innerHTML = `<div class="empty-state">\uB2E8\uC5B4 \uB370\uC774\uD130\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.</div>`;
     return;
   }
 
-  unitList.innerHTML = sortedUnits.map(([unit, words]) => `
-    <article class="study-unit-card">
-      <div class="study-unit-head">
-        <div>
-          <p class="eyebrow">Unit ${unit}</p>
-          <h3>${formatNumber(words.length)}개 단어</h3>
+  state.studyVolume = String(selectedBook.volume);
+  state.studyUnitKey = selectedUnit.unitKey;
+  const filteredWords = getFilteredStudyWords();
+  bookCount.textContent = `${formatNumber(books.length)}\uAD8C`;
+  unitCount.textContent = `${formatNumber(units.length)}\uAC1C`;
+  searchMeta.textContent = state.studySearch.trim()
+    ? `1000 / 2000 / 4000 \uC804\uCCB4\uC5D0\uC11C ${formatNumber(filteredWords.length)}\uAC1C \uB2E8\uC5B4\uAC00 \uAC80\uC0C9\uB418\uC5C8\uC2B5\uB2C8\uB2E4.`
+    : `${selectedUnit.volume}\uAD8C Unit ${selectedUnit.unit} \uB2E8\uC5B4\uB97C \uBCF4\uACE0 \uC788\uC2B5\uB2C8\uB2E4.`;
+
+  bookTabs.innerHTML = books.map((book) => `
+    <button class="study-unit-tab ${String(book.volume) === String(selectedBook.volume) ? "active" : ""}" type="button" data-volume="${book.volume}">
+      ${book.volume}\uAD8C
+    </button>
+  `).join("");
+  $$("#studyBookTabs .study-unit-tab").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.studyVolume = button.dataset.volume || "";
+      state.studyUnitKey = "";
+      state.studySearch = "";
+      const input = $("#studySearchInput");
+      if (input) input.value = "";
+      renderStudyView();
+    });
+  });
+
+  unitTabs.innerHTML = units.map((unit) => `
+    <button class="study-unit-tab ${unit.unitKey === selectedUnit.unitKey ? "active" : ""}" type="button" data-unit-key="${unit.unitKey}">
+      U${unit.unit}
+    </button>
+  `).join("");
+  $$("#studyUnitTabs .study-unit-tab").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.studyUnitKey = button.dataset.unitKey || "";
+      state.studySearch = "";
+      const input = $("#studySearchInput");
+      if (input) input.value = "";
+      renderStudyView();
+    });
+  });
+
+  if (!filteredWords.length) {
+    unitList.innerHTML = `<div class="empty-state">\uAC80\uC0C9 \uACB0\uACFC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.</div>`;
+    return;
+  }
+
+  if (state.studySearch.trim()) {
+    unitList.innerHTML = `
+      <article class="study-unit-card">
+        <div class="study-unit-head">
+          <div>
+            <p class="eyebrow">1000 / 2000 / 4000</p>
+            <h3>\uAC80\uC0C9 \uACB0\uACFC</h3>
+          </div>
+          <span class="study-unit-badge">${formatNumber(filteredWords.length)} words</span>
         </div>
-        <span class="study-unit-badge">${formatNumber(words.length)} words</span>
-      </div>
-      <div class="study-word-list">
-        ${words.map((word) => `
-          <div class="study-word-card">
+        <div class="study-word-list">
+          ${filteredWords.map((word) => `
+            <div class="study-word-card ${word.is_extra ? "extra" : ""}">
             <div class="study-word-top">
               <strong>${word.word}</strong>
               <span>${word.part || ""}</span>
             </div>
             <p class="study-word-korean">${word.korean || ""}</p>
             <p class="study-word-english">${word.english || ""}</p>
+            <p class="study-word-location">${word.seriesId} / ${word.volume}\uAD8C / Unit ${word.unit}</p>
+            ${word.example ? `<p class="study-word-example">${word.example}</p>` : ""}
+            ${word.is_extra ? `<span class="study-extra-badge">Extra</span>` : ""}
+          </div>
+        `).join("")}
+        </div>
+      </article>
+    `;
+    return;
+  }
+
+  unitList.innerHTML = `
+    <article class="study-unit-card">
+      <div class="study-unit-head">
+        <div>
+          <p class="eyebrow">${selectedUnit.bookTitle}</p>
+          <h3>${selectedUnit.volume}\uAD8C Unit ${selectedUnit.unit}</h3>
+        </div>
+        <span class="study-unit-badge">${formatNumber(filteredWords.length)} words</span>
+      </div>
+      <div class="study-word-list">
+        ${filteredWords.map((word) => `
+          <div class="study-word-card ${word.is_extra ? "extra" : ""}">
+            <div class="study-word-top">
+              <strong>${word.word}</strong>
+              <span>${word.part || ""}</span>
+            </div>
+            <p class="study-word-korean">${word.korean || ""}</p>
+            <p class="study-word-english">${word.english || ""}</p>
+            ${word.example ? `<p class="study-word-example">${word.example}</p>` : ""}
+            ${word.is_extra ? `<span class="study-extra-badge">Extra</span>` : ""}
           </div>
         `).join("")}
       </div>
     </article>
-  `).join("");
+  `;
 }
 
 async function ensureStudyView() {
   try {
-    await loadStudyWords();
+    await loadStudyLibrary();
+    const series = getCurrentStudySeries();
+    if (series && !state.studySeries) {
+      state.studySeries = series.id;
+    }
+    if (!getCurrentStudyBook()) {
+      const firstBook = getCurrentStudyBooks()[0];
+      state.studyVolume = firstBook ? String(firstBook.volume) : "";
+    }
+    if (!getCurrentStudyUnit()) {
+      const firstUnit = getCurrentStudyUnits()[0];
+      state.studyUnitKey = firstUnit?.unitKey || "";
+    }
     renderStudyView();
   } catch (err) {
     const unitList = $("#studyUnitList");
     const searchMeta = $("#studySearchMeta");
-    if (searchMeta) searchMeta.textContent = err.message || "단어장을 불러오지 못했습니다.";
+    if (searchMeta) searchMeta.textContent = err.message || "\uB2E8\uC5B4 \uB370\uC774\uD130\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.";
     if (unitList) {
-      unitList.innerHTML = `<div class="empty-state">단어장을 불러오지 못했습니다.</div>`;
+      unitList.innerHTML = `<div class="empty-state">\uB2E8\uC5B4 \uB370\uC774\uD130\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.</div>`;
     }
   }
 }
@@ -260,6 +655,23 @@ async function refreshRewardStatus() {
   renderRewardAvailability();
 }
 
+async function refreshQuizActivity() {
+  if (!state.user?.user_id) {
+    state.quizActivity = null;
+    renderActivityCalendar();
+    return;
+  }
+
+  try {
+    const activity = await apiCall(`/quizzes/activity?user_id=${encodeURIComponent(state.user.user_id)}&days=35`);
+    state.quizActivity = activity;
+  } catch (err) {
+    state.quizActivity = null;
+  }
+
+  renderActivityCalendar();
+}
+
 function updateStats() {
   $("#totalPoints").textContent = `${formatNumber(state.points)}P`;
   const totalSolvedToday = Object.values(state.modeCounts || {}).reduce((sum, count) => sum + Number(count || 0), 0);
@@ -270,7 +682,8 @@ function updateStats() {
   updateProfileStats();
   updateGoalSummary();
   renderRewardAvailability();
-  $("#todayRevenue").textContent = `${formatNumber(state.totalRevenue)}원`;
+  rememberActivityDay(todayKey, totalSolvedToday);
+  renderActivityCalendar();
   localStorage.setItem("nrc_daily_quiz", JSON.stringify({
     date: todayKey,
     solved: state.solved,
@@ -431,6 +844,66 @@ window.onNativeGoogleSignInError = (message) => {
   showToast(message || "Google 로그인에 실패했습니다.");
 };
 
+window.onNativeRewardAdResult = (payload) => {
+  rewardClaimPending = false;
+  try {
+    const data = JSON.parse(payload || "{}");
+    if (!data.success) {
+      showToast(data.message || "\uAD11\uACE0\uB97C \uC7AC\uC0DD\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
+      return;
+    }
+    rewardClaimPending = true;
+    if (window.NRCBridge?.claimQuizReward && state.user?.user_id) {
+      window.NRCBridge.claimQuizReward(
+        state.user.user_id,
+        data.adToken || `admob_rewarded_${Date.now()}`
+      );
+      return;
+    }
+    showToast("\uBCF4\uC0C1 \uCC98\uB9AC\uB97C \uC9C4\uD589\uD569\uB2C8\uB2E4.");
+  } catch (err) {
+    rewardClaimPending = false;
+    showToast("\uBCF4\uC0C1 \uAD11\uACE0 \uCC98\uB9AC \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.");
+  }
+};
+
+window.onNativeRewardClaimResult = async (payload) => {
+  rewardClaimPending = false;
+  try {
+    const data = JSON.parse(payload || "{}");
+    if (data.success === false) {
+      showToast(data.detail || data.message || "\uBCF4\uC0C1 \uCC98\uB9AC\uB97C \uC644\uB8CC\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
+      return;
+    }
+    state.points = Number(data.current_total_points || state.points || 0);
+    await refreshRewardStatus();
+    updateStats();
+    showToast(
+      data.reward_points > 0
+        ? `${data.reward_points}P\uAC00 \uC801\uB9BD\uB418\uC5C8\uC2B5\uB2C8\uB2E4.`
+        : "\uC801\uB9BD \uAC00\uB2A5\uD55C \uD3EC\uC778\uD2B8\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4."
+    );
+    clearQuizSession();
+    openQuizModeSelect();
+  } catch (err) {
+    showToast("\uBCF4\uC0C1 \uC751\uB2F5 \uCC98\uB9AC \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.");
+  }
+};
+
+window.onNativeInterstitialAdResult = (payload) => {
+  retryInterstitialPending = false;
+  try {
+    const data = JSON.parse(payload || "{}");
+    if (!data.success) {
+      showToast(data.message || "\uC804\uBA74\uAD11\uACE0\uB97C \uC7AC\uC0DD\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
+      return;
+    }
+    startRetryQuizChallenge();
+  } catch (err) {
+    showToast("\uC7AC\uB3C4\uC804 \uCC98\uB9AC \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.");
+  }
+};
+
 function updateProfileStats() {
   const quizState = $("#profileQuizState");
   const couponCount = $("#profileCouponCount");
@@ -483,6 +956,178 @@ function showToast(message) {
   showToast.timeout = setTimeout(() => toast.classList.add("hidden"), 2600);
 }
 
+function requiresQuizModeConfirm(mode) {
+  return mode === "eng" || mode === "kor" || mode === "mixed";
+}
+
+function closeQuizModeConfirm(accepted) {
+  const overlay = $("#quizConfirmOverlay");
+  if (overlay) overlay.classList.add("hidden");
+  const resolver = quizConfirmResolver;
+  quizConfirmResolver = null;
+  if (resolver) resolver(Boolean(accepted));
+}
+
+function confirmQuizModeStart() {
+  const overlay = $("#quizConfirmOverlay");
+  if (!overlay) return Promise.resolve(true);
+  overlay.classList.remove("hidden");
+  return new Promise((resolve) => {
+    quizConfirmResolver = resolve;
+  });
+}
+
+async function handleQuizModeSelection(mode) {
+  if (mode === "incorrect") {
+    startIncorrectQuiz();
+    return;
+  }
+  if (requiresQuizModeConfirm(mode)) {
+    const accepted = await confirmQuizModeStart();
+    if (!accepted) return;
+  }
+  state.quizMode = mode;
+  fetchQuizzesAndStart();
+}
+
+
+function applyAppStaticLabels() {
+  const loginTitle = document.querySelector("#loginView h1");
+  if (loginTitle) loginTitle.textContent = "로그인";
+
+  const loginGuide = document.getElementById("loginGuide");
+  if (loginGuide) loginGuide.textContent = "Google 계정으로 로그인한 뒤 앱에서 사용할 닉네임을 만들어 주세요.";
+
+  const googleButton = document.getElementById("googleLoginButton");
+  if (googleButton) googleButton.innerHTML = `<span>G</span>Google로 계속하기`;
+
+  const todayEyebrow = document.querySelector(".today-summary .eyebrow");
+  if (todayEyebrow) todayEyebrow.textContent = "오늘의 학습";
+
+  const goalEyebrow = document.querySelector(".goal-summary .eyebrow");
+  if (goalEyebrow) goalEyebrow.textContent = "다음 교환 목표";
+
+  const quizProgressLabel = document.querySelector("#homeView .stats-grid .metric:nth-of-type(2) > p");
+  if (quizProgressLabel) quizProgressLabel.textContent = "퀴즈 진행";
+
+  const rewardLabel = document.querySelector("#homeView .stats-grid .metric:nth-of-type(3) > p");
+  if (rewardLabel) rewardLabel.textContent = "오늘 적립 가능";
+
+  const dailyEyebrow = document.querySelector(".daily-card .eyebrow");
+  if (dailyEyebrow) dailyEyebrow.textContent = "오늘의 추천";
+
+  const dailyTitle = document.querySelector(".daily-card h3");
+  if (dailyTitle) dailyTitle.textContent = "오늘의 10문제 세트";
+
+  const dailyCopy = document.querySelector(".daily-card p:not(.eyebrow)");
+  if (dailyCopy) dailyCopy.textContent = "생활 영어, 비즈니스, 여행 표현을 엮어 출제합니다.";
+
+  const startQuiz = document.getElementById("startQuiz");
+  if (startQuiz) startQuiz.textContent = "도전하기";
+
+  const recommendTag = document.querySelector(".recommend-card span");
+  if (recommendTag) recommendTag.textContent = "오늘의 목표";
+
+  const recommendTitle = document.querySelector(".recommend-card strong");
+  if (recommendTitle) recommendTitle.textContent = "꾸준함을 쌓아보세요";
+
+  const recommendCopy = document.querySelector(".recommend-card p");
+  if (recommendCopy) recommendCopy.textContent = "오늘 퀴즈를 마치면 교환 목표까지 더 가까워집니다.";
+
+  const navLabels = { homeView: "홈", quizView: "퀴즈", studyView: "학습", shopView: "상점", reportView: "마이" };
+  document.querySelectorAll(".nav-item").forEach((button) => {
+    const label = navLabels[button.dataset.view];
+    if (label) button.textContent = label;
+  });
+
+  const loadingTitle = document.getElementById("loadingTitle");
+  if (loadingTitle) loadingTitle.textContent = "처리 중";
+  const loadingMessage = document.getElementById("loadingMessage");
+  if (loadingMessage) loadingMessage.textContent = "서버와 통신하고 있습니다.";
+
+  const completeStrong = document.querySelector("#quizComplete > strong");
+  if (completeStrong) completeStrong.textContent = "오늘의 퀴즈를 완료했습니다";
+  const completeCopy = document.querySelector("#quizComplete > p");
+  if (completeCopy) completeCopy.textContent = "광고를 본 뒤 10문제 정답률에 따라 포인트가 적립됩니다.";
+
+  const reviewTitle = document.querySelector("#reviewPanel h3");
+  if (reviewTitle) reviewTitle.textContent = "오늘의 복습";
+
+  const myStatsTitle = document.querySelector(".learning-panel h3");
+  if (myStatsTitle) myStatsTitle.textContent = "이용 현황";
+}
+
+function applyQuizStaticLabels() {
+  const selectEyebrow = document.getElementById("quizSelectEyebrow");
+  if (selectEyebrow) selectEyebrow.style.display = "none";
+  const selectTitle = document.getElementById("quizSelectTitle") || document.querySelector("#quizModeSelect h3");
+  if (selectTitle) selectTitle.style.display = "none";
+  const selectCopy = document.querySelector("#quizModeSelect > p:not(.eyebrow)");
+  if (selectCopy) selectCopy.style.display = "none";
+
+  const completeEyebrow = document.getElementById("quizCompleteEyebrow");
+  if (completeEyebrow) completeEyebrow.remove();
+  const completeTitle = document.getElementById("quizCompleteTitle");
+  if (completeTitle) completeTitle.remove();
+
+  const reviewActions = document.querySelector("#quizComplete .review-actions");
+  if (reviewActions && !document.getElementById("retryQuizButton")) {
+    const retryButton = document.createElement("button");
+    retryButton.id = "retryQuizButton";
+    retryButton.className = "outline-button";
+    retryButton.type = "button";
+    retryButton.textContent = "\uC7AC\uB3C4\uC804";
+    const rewardButton = document.getElementById("claimRewardButton");
+    if (rewardButton) {
+      reviewActions.insertBefore(retryButton, rewardButton);
+    } else {
+      reviewActions.appendChild(retryButton);
+    }
+  }
+
+  const retryButton = $("#retryQuizButton");
+  if (retryButton) retryButton.textContent = "\uC7AC\uB3C4\uC804";
+  const backButton = $("#skipRewardButton");
+  if (backButton) backButton.remove();
+  const rewardButton = $("#claimRewardButton");
+  if (rewardButton) rewardButton.textContent = "\uBCF4\uC0C1 \uD68D\uB4DD";
+  const confirmTitle = $("#quizConfirmTitle");
+  if (confirmTitle) confirmTitle.textContent = "\uD034\uC988 \uC2DC\uC791";
+  const confirmMessage = $("#quizConfirmMessage");
+  if (confirmMessage) {
+    confirmMessage.textContent = "\uD3EC\uC778\uD2B8 \uC9C0\uAE09 \uD034\uC988\uB97C \uC2DC\uC791\uD558\uBA74 \uC644\uB8CC \uC804\uAE4C\uC9C0 \uB2E4\uB978 \uD034\uC988\uB85C \uBCC0\uACBD\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.";
+  }
+  const confirmCancel = $("#quizConfirmCancel");
+  if (confirmCancel) confirmCancel.textContent = "\uCDE8\uC18C";
+  const confirmAccept = $("#quizConfirmAccept");
+  if (confirmAccept) confirmAccept.textContent = "\uACC4\uC18D";
+  renderQuizSourceCard();
+}
+
+function renderQuizModeSelectPanel() {
+  const panel = document.getElementById("quizModeSelect");
+  if (!panel) return;
+  panel.innerHTML = `
+    <article id="quizSourceCard" class="quiz-source-card">
+      <p class="eyebrow">오늘 출제 범위</p>
+      <strong id="quizSourceTitle">단어 범위를 확인하고 있습니다.</strong>
+      <p id="quizSourceCopy">오늘 퀴즈가 어느 책과 유닛에서 나오는지 불러오고 있습니다.</p>
+    </article>
+    <div class="mode-buttons">
+      <button class="action-button outline mode-btn" type="button" data-mode="eng">영영 퀴즈</button>
+      <button class="action-button outline mode-btn" type="button" data-mode="kor">영한 퀴즈</button>
+      <button class="action-button mode-btn" type="button" data-mode="mixed">오늘의 퀴즈</button>
+      <button class="action-button outline mode-btn" type="button" data-mode="incorrect">오답 퀴즈</button>
+    </div>
+  `;
+  panel.querySelectorAll(".mode-btn").forEach((button) => {
+    button.addEventListener("click", () => {
+      handleQuizModeSelection(button.dataset.mode);
+    });
+  });
+  renderQuizSourceCard();
+}
+
 function updateCurrentTabTitle(viewId) {
   const title = $("#currentTabTitle");
   if (!title) return;
@@ -496,10 +1141,90 @@ function updateCurrentTabTitle(viewId) {
   title.textContent = labels[viewId] || "\uD648";
 }
 
+function syncViewMode(viewId) {
+  const appShell = $("#appShell");
+  const workspace = document.querySelector(".workspace");
+  const topbar = document.querySelector(".topbar");
+  const topbarSummary = document.querySelector(".topbar-summary");
+  const isQuiz = viewId === "quizView";
+  if (appShell) {
+    appShell.classList.toggle("quiz-mode", isQuiz);
+  }
+  if (workspace) {
+    workspace.classList.toggle("quiz-mode", isQuiz);
+  }
+  if (topbar) {
+    topbar.classList.remove("quiz-hidden");
+    topbar.style.display = "";
+  }
+  if (topbarSummary) {
+    topbarSummary.style.display = "grid";
+  }
+}
+
+function setQuizDisplayState(mode) {
+  const quizView = $("#quizView");
+  if (!quizView) return;
+  quizView.classList.remove("quiz-state-select", "quiz-state-active", "quiz-state-complete");
+  if (mode) {
+    quizView.classList.add(`quiz-state-${mode}`);
+  }
+}
+
+function setQuizFeedbackVisible(visible) {
+  const quizView = $("#quizView");
+  if (!quizView) return;
+  quizView.classList.toggle("quiz-feedback-visible", Boolean(visible));
+}
+
+function scrollActiveViewToTop(viewId) {
+  const appShell = $("#appShell");
+  if (appShell) appShell.classList.add("nav-jumping");
+  const workspace = document.querySelector(".workspace");
+  const activeView = document.getElementById(viewId);
+  const scroller = document.scrollingElement || document.documentElement;
+  if (workspace) {
+    workspace.scrollTop = 0;
+    if (workspace.scrollTo) workspace.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }
+  if (scroller) scroller.scrollTop = 0;
+  if (activeView?.scrollTo) {
+    activeView.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }
+  if (activeView) {
+    activeView.scrollTop = 0;
+  }
+  $$(".view").forEach((view) => {
+    view.scrollTop = 0;
+  });
+  document.documentElement.scrollTop = 0;
+  document.body.scrollTop = 0;
+  window.scrollTo(0, 0);
+  requestAnimationFrame(() => {
+    if (workspace) {
+      workspace.scrollTop = 0;
+      if (workspace.scrollTo) workspace.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    }
+    if (scroller) scroller.scrollTop = 0;
+    if (activeView?.scrollTo) {
+      activeView.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    }
+    if (activeView) {
+      activeView.scrollTop = 0;
+    }
+    window.scrollTo(0, 0);
+    requestAnimationFrame(() => {
+      if (appShell) appShell.classList.remove("nav-jumping");
+    });
+  });
+}
+
 function switchView(viewId) {
   $$(".view").forEach((view) => view.classList.toggle("active", view.id === viewId));
   $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === viewId));
   updateCurrentTabTitle(viewId);
+  syncViewMode(viewId);
+  scrollActiveViewToTop(viewId);
   if (viewId === "quizView") {
     renderQuiz();
   } else if (viewId === "studyView") {
@@ -513,6 +1238,9 @@ function switchView(viewId) {
   } else {
     clearInterval(state.timerId);
     state.locked = false;
+    if (viewId === "homeView") {
+      refreshQuizActivity().catch(() => {});
+    }
   }
 }
 
@@ -618,6 +1346,9 @@ function resumeOrOpenQuiz() {
 
 async function renderQuiz() {
   if (state.quizzes.length === 0) {
+    setQuizDisplayState("select");
+    setQuizFeedbackVisible(false);
+    renderQuizModeSelectPanel();
     $("#quizModeSelect")?.classList.remove("hidden");
     $("#quizHead").classList.add("hidden");
     $("#quizProgressWrap").classList.add("hidden");
@@ -632,11 +1363,13 @@ async function renderQuiz() {
     state.completed = true;
     saveQuizSession();
     clearInterval(state.timerId);
+    setQuizFeedbackVisible(false);
     $("#quizModeSelect")?.classList.add("hidden");
     $("#quizHead").classList.add("hidden");
     $("#quizProgressWrap").classList.add("hidden");
     $("#optionList").innerHTML = "";
     $("#quizFeedback").classList.add("hidden");
+    setQuizDisplayState("complete");
     $("#quizComplete").classList.remove("hidden");
     await updateRewardControls();
     renderReview();
@@ -646,6 +1379,8 @@ async function renderQuiz() {
   }
 
   if (false) { // 무제한 풀기 허용
+    setQuizDisplayState("complete");
+    setQuizFeedbackVisible(false);
     state.completed = true;
     clearInterval(state.timerId);
     $("#quizHead").classList.add("hidden");
@@ -673,6 +1408,8 @@ async function renderQuiz() {
   }
 
   advancePastAnsweredQuestion();
+  setQuizDisplayState("active");
+  setQuizFeedbackVisible(false);
   const quiz = state.quizzes[state.current % state.quizzes.length];
   $("#quizModeSelect")?.classList.add("hidden");
   $("#quizHead").classList.remove("hidden");
@@ -756,12 +1493,16 @@ async function verifyAnswer(selectedIndex) {
       return;
     }
 
-    $("#quizFeedback").innerHTML = `
+    const feedbackPanel = $("#quizFeedback");
+    feedbackPanel.classList.remove("correct", "wrong");
+    feedbackPanel.classList.add(isCorrect ? "correct" : "wrong");
+    feedbackPanel.innerHTML = `
       <strong>${isCorrect ? "정답입니다" : "아쉬워요"}</strong>
       <p>${res.explanation}</p>
       <button id="nextQuizButton" class="action-button compact" type="button">다음 문제</button>
     `;
-    $("#quizFeedback").classList.remove("hidden");
+    feedbackPanel.classList.remove("hidden");
+    setQuizFeedbackVisible(true);
     $("#nextQuizButton").addEventListener("click", nextQuiz);
 
     updateStats();
@@ -792,6 +1533,13 @@ async function claimReward() {
     return;
   }
   if (!state.user) return;
+  if (rewardClaimPending) return;
+  if (window.NRCBridge?.showRewardedAd) {
+    rewardClaimPending = true;
+    window.NRCBridge.showRewardedAd();
+    showToast("\uBCF4\uC0C1\uD615 \uAD11\uACE0\uB97C \uBD88\uB7EC\uC624\uB294 \uC911\uC785\uB2C8\uB2E4.");
+    return;
+  }
   try {
     const res = await withLoading(
       "리워드 신청 중",
@@ -825,10 +1573,34 @@ function openQuizModeSelect() {
   syncRoute("quizView");
 }
 
+function startRetryQuizChallenge() {
+  clearQuizSession();
+  state.completed = false;
+  state.current = 0;
+  state.answers = [];
+  state.questionDeadline = null;
+  clearInterval(state.timerId);
+  state.locked = false;
+  openQuizModeSelect();
+}
+
+function retryQuizChallenge() {
+  if (retryInterstitialPending) return;
+  if (window.NRCBridge?.showInterstitialAd) {
+    retryInterstitialPending = true;
+    window.NRCBridge.showInterstitialAd();
+    showToast("\uC7AC\uB3C4\uC804 \uAD11\uACE0\uB97C \uBD88\uB7EC\uC624\uB294 \uC911\uC785\uB2C8\uB2E4.");
+    return;
+  }
+  startRetryQuizChallenge();
+}
+
 async function updateRewardControls() {
   const rewardButton = $("#claimRewardButton");
   const skipButton = $("#skipRewardButton");
-  if (skipButton) skipButton.classList.remove("hidden");
+  const retryButton = $("#retryQuizButton");
+  if (skipButton) skipButton.remove();
+  if (retryButton) retryButton.classList.remove("hidden");
   if (!rewardButton) return;
 
   rewardButton.textContent = "보상 획득";
@@ -1155,12 +1927,15 @@ function bindEvents() {
   });
 
   $$(".nav-item").forEach((item) => item.addEventListener("click", () => {
+    const targetView = item.dataset.view;
+    if (!targetView) return;
     if (item.dataset.view === "quizView") {
       resumeOrOpenQuiz();
       return;
     }
-    switchView(item.dataset.view);
-    syncRoute(item.dataset.view);
+    scrollActiveViewToTop(targetView);
+    switchView(targetView);
+    syncRoute(targetView);
   }));
   $("#startQuiz").addEventListener("click", () => {
     if (state.completed && !state.quizzes.length) {
@@ -1169,16 +1944,15 @@ function bindEvents() {
     }
     resumeOrOpenQuiz();
   });
-  $$(".mode-btn").forEach((button) => button.addEventListener("click", () => {
-    if (button.dataset.mode === "incorrect") {
-      startIncorrectQuiz();
-      return;
-    }
-    state.quizMode = button.dataset.mode;
-    fetchQuizzesAndStart();
-  }));
   $("#claimRewardButton")?.addEventListener("click", claimReward);
-  $("#skipRewardButton")?.addEventListener("click", openQuizModeSelect);
+  $("#retryQuizButton")?.addEventListener("click", retryQuizChallenge);
+  $("#quizConfirmCancel")?.addEventListener("click", () => closeQuizModeConfirm(false));
+  $("#quizConfirmAccept")?.addEventListener("click", () => closeQuizModeConfirm(true));
+  $("#quizConfirmOverlay")?.addEventListener("click", (event) => {
+    if (event.target?.id === "quizConfirmOverlay") {
+      closeQuizModeConfirm(false);
+    }
+  });
   $("#showIncorrectNoteButton")?.addEventListener("click", toggleIncorrectNote);
   $("#startIncorrectQuiz")?.addEventListener("click", startIncorrectQuiz);
   $("#studySearchInput")?.addEventListener("input", (event) => {
@@ -1187,8 +1961,14 @@ function bindEvents() {
   });
   $$(".study-book-chip").forEach((button) => {
     button.addEventListener("click", () => {
-      if (button.disabled) return;
-      state.studyBook = button.dataset.book || "default";
+      const nextSeries = button.dataset.series;
+      if (!nextSeries) return;
+      state.studySeries = nextSeries;
+      state.studyVolume = "";
+      state.studyUnitKey = "";
+      state.studySearch = "";
+      const input = $("#studySearchInput");
+      if (input) input.value = "";
       $$(".study-book-chip").forEach((chip) => chip.classList.toggle("active", chip === button));
       renderStudyView();
     });
@@ -1220,6 +2000,8 @@ function bindEvents() {
 
 
 async function init() {
+  applyAppStaticLabels();
+  applyQuizStaticLabels();
   bindEvents();
   restoreQuizSession();
   if (hasLogin()) {
@@ -1229,13 +2011,15 @@ async function init() {
       renderCoupons(),
       renderLockscreenSettings(),
       refreshRewardStatus(),
-      loadStudyWords()
+      refreshQuizActivity(),
+      loadStudyLibrary()
     ]);
     switchView(routeFromHash());
   } else {
     showLogin();
     renderShop();
-    loadStudyWords().catch(() => {});
+    renderActivityCalendar();
+    loadStudyLibrary().catch(() => {});
   }
   updateStats();
 

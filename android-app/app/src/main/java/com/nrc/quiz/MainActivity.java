@@ -840,17 +840,29 @@ public class MainActivity extends Activity {
                 String responseText = readStream(stream);
 
                 if (statusCode >= 200 && statusCode < 300) {
-                    dispatchRewardClaimResult(responseText);
+                    JSONObject successPayload;
+                    try {
+                        successPayload = responseText == null || responseText.isEmpty()
+                                ? new JSONObject()
+                                : new JSONObject(responseText);
+                    } catch (Exception parseError) {
+                        successPayload = new JSONObject();
+                        successPayload.put("raw_response", responseText);
+                    }
+                    successPayload.put("success", true);
+                    dispatchRewardClaimResult(successPayload.toString());
                     return;
                 }
 
                 JSONObject errorPayload = new JSONObject();
+                errorPayload.put("success", false);
                 errorPayload.put("detail", extractErrorDetail(responseText));
                 dispatchRewardClaimResult(errorPayload.toString());
             } catch (Exception e) {
                 try {
                     JSONObject errorPayload = new JSONObject();
-                    errorPayload.put("detail", "보상 적립 요청에 실패했습니다. 잠시 후 다시 시도해주세요.");
+                    errorPayload.put("success", false);
+                    errorPayload.put("detail", "?? ?? ??? ??????. ?? ? ?? ??????.");
                     dispatchRewardClaimResult(errorPayload.toString());
                 } catch (Exception ignored) {
                     Log.e(TAG, "Failed to dispatch native reward claim error", ignored);

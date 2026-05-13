@@ -1,4 +1,4 @@
-const CACHE_NAME = "nrc-walk-quiz-v1";
+const CACHE_NAME = "englishslide-v2";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -8,7 +8,14 @@ const APP_SHELL = [
   "./offline.html",
   "./privacy.html",
   "./terms.html",
-  "./assets/icon.svg"
+  "./assets/app-icon.png",
+  "./assets/mascot-wave.png",
+  "./assets/mascot-book.png",
+  "./assets/mascot-headset.png",
+  "./assets/mascot-spark.png",
+  "./assets/mascot-flag.png",
+  "./assets/mascot-thinking.png",
+  "./assets/mascot-happy.png"
 ];
 
 self.addEventListener("install", (event) => {

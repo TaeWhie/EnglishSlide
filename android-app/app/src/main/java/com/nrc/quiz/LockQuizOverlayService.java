@@ -31,12 +31,13 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
+import com.google.android.gms.ads.AdListener;
+import com.google.android.gms.ads.AdRequest;
+import com.google.android.gms.ads.AdSize;
+import com.google.android.gms.ads.AdView;
+import com.google.android.gms.ads.LoadAdError;
+import com.google.android.gms.ads.MobileAds;
 
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
@@ -58,12 +59,21 @@ public class LockQuizOverlayService extends Service {
     private static final float SWIPE_THRESHOLD_DP = 84f;
     private static final float SWIPE_VELOCITY_DP = 420f;
     private static volatile LockQuizOverlayService activeInstance;
-    private static final long COVER_DISMISS_TIMEOUT_MS = 1800L;
+    private static final long COVER_DISMISS_TIMEOUT_MS = 2200L;
+    private static final int COLOR_CARD_TEXT = Color.rgb(24, 58, 78);
+    private static final int COLOR_CARD_MUTED = Color.rgb(88, 120, 139);
+    private static final int COLOR_CARD_SOFT = Color.rgb(110, 141, 160);
+    private static final int COLOR_TEXT_PRIMARY = COLOR_CARD_TEXT;
+    private static final int COLOR_TEXT_SECONDARY = Color.rgb(64, 97, 118);
+    private static final int COLOR_TEXT_MUTED = Color.rgb(102, 132, 150);
+    private static final int COLOR_PANEL = Color.argb(102, 255, 255, 255);
+    private static final int COLOR_PANEL_STROKE = Color.argb(86, 184, 233, 241);
+    private static final int LOCK_BANNER_WIDTH_DP = 236;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private KeyguardManager keyguardManager;
     private PowerManager powerManager;
-    private WordEntry currentNotificationWord;
+    private WordLibrary.WordEntry currentNotificationWord;
     private WindowManager windowManager;
     private View overlayView;
     private View launchCoverView;
@@ -75,6 +85,7 @@ public class LockQuizOverlayService extends Service {
     private TextView overlayUnlockHint;
     private TextView overlayQuizHint;
     private TextView overlayRewardHint;
+    private AdView overlayBannerAdView;
     private VelocityTracker velocityTracker;
     private float swipeStartX = 0f;
     private float swipeStartY = 0f;
@@ -97,7 +108,8 @@ public class LockQuizOverlayService extends Service {
             if (Intent.ACTION_SCREEN_OFF.equals(action)) {
                 launchSuppressedUntilScreenOff = false;
                 cancelPendingLockQuizLaunch();
-                hideOverlay();
+                hideLaunchCover();
+                prepareOverlayForWake();
                 refreshNotification();
                 return;
             }
@@ -111,6 +123,7 @@ public class LockQuizOverlayService extends Service {
             }
 
             if (Intent.ACTION_SCREEN_ON.equals(action)) {
+                hideLaunchCover();
                 refreshNotification();
                 scheduleLockQuizLaunch();
             }
@@ -146,6 +159,8 @@ public class LockQuizOverlayService extends Service {
         keyguardManager = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
         powerManager = (PowerManager) getSystemService(POWER_SERVICE);
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+        MobileAds.initialize(this, initializationStatus -> {
+        });
         registerScreenReceiver();
         refreshNotification();
     }
@@ -158,8 +173,12 @@ public class LockQuizOverlayService extends Service {
             return START_NOT_STICKY;
         }
         refreshNotification();
-        if (!isScreenInteractive() || isDeviceLocked()) {
+        if (isScreenInteractive() && isDeviceLocked()) {
             scheduleLockQuizLaunch();
+        } else if (!isScreenInteractive()) {
+            cancelPendingLockQuizLaunch();
+            hideLaunchCover();
+            prepareOverlayForWake();
         }
         return START_STICKY;
     }
@@ -224,7 +243,12 @@ public class LockQuizOverlayService extends Service {
         boolean interactive = isScreenInteractive();
         Log.d(TAG, "showLockQuizIfLocked enabled=" + isEnabled() + " locked=" + locked + " interactive=" + interactive + " suppressed=" + launchSuppressedUntilScreenOff);
         if (!isEnabled() || launchSuppressedUntilScreenOff) return;
-        if (!interactive || !locked) return;
+        if (!interactive || !locked) {
+            hideLaunchCover();
+            return;
+        }
+        hideOverlayForLaunch();
+        hideLaunchCover();
         Intent lockQuiz = new Intent(this, LockQuizActivity.class);
         lockQuiz.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
                 | Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -232,6 +256,7 @@ public class LockQuizOverlayService extends Service {
         try {
             startActivity(lockQuiz);
         } catch (RuntimeException error) {
+            hideLaunchCover();
             Log.w(TAG, "Lock quiz launch was blocked by the system.", error);
         }
     }
@@ -244,7 +269,12 @@ public class LockQuizOverlayService extends Service {
         if (interactive && !locked) return;
         if (overlayView != null) {
             updateOverlayContent();
-            scheduleIdleTimeout();
+            updateOverlayClock();
+            if (interactive) {
+                scheduleIdleTimeout();
+            } else {
+                mainHandler.removeCallbacks(idleTimeout);
+            }
             return;
         }
 
@@ -254,7 +284,11 @@ public class LockQuizOverlayService extends Service {
             Log.d(TAG, "Overlay lock quiz attached.");
             updateOverlayContent();
             updateOverlayClock();
-            scheduleIdleTimeout();
+            if (interactive) {
+                scheduleIdleTimeout();
+            } else {
+                mainHandler.removeCallbacks(idleTimeout);
+            }
             mainHandler.post(clockRefresh);
         } catch (RuntimeException error) {
             overlayView = null;
@@ -274,8 +308,7 @@ public class LockQuizOverlayService extends Service {
                 | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
                 | WindowManager.LayoutParams.FLAG_LAYOUT_INSET_DECOR
                 | WindowManager.LayoutParams.FLAG_FULLSCREEN
-                | WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
-                | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON;
+                | WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED;
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -295,7 +328,7 @@ public class LockQuizOverlayService extends Service {
 
     private View buildOverlayView() {
         FrameLayout root = new FrameLayout(this);
-        root.setBackground(lockBackground());
+        root.setBackgroundColor(Color.rgb(236, 224, 255));
         root.setClickable(true);
         root.setFocusable(true);
         root.setFitsSystemWindows(false);
@@ -315,28 +348,29 @@ public class LockQuizOverlayService extends Service {
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setGravity(Gravity.CENTER_HORIZONTAL);
-        content.setPadding(dp(24), dp(48), dp(24), dp(28));
+        content.setPadding(dp(24), dp(82), dp(24), 0);
 
-        overlayTimeView = text("", Color.WHITE, 76, Typeface.NORMAL);
+        overlayTimeView = text("", COLOR_TEXT_PRIMARY, 76, Typeface.NORMAL);
         overlayTimeView.setIncludeFontPadding(false);
         content.addView(overlayTimeView, matchWrap());
 
-        overlayDateView = text("", Color.argb(210, 255, 255, 255), 17, Typeface.NORMAL);
+        overlayDateView = text("", COLOR_TEXT_SECONDARY, 17, Typeface.NORMAL);
         content.addView(overlayDateView, matchWrap());
-
-        View spacerTop = new View(this);
-        content.addView(spacerTop, new LinearLayout.LayoutParams(1, 0, 1.05f));
-
-        content.addView(buildOverlayWordCard(), matchWrap());
-
-        View spacerBottom = new View(this);
-        content.addView(spacerBottom, new LinearLayout.LayoutParams(1, 0, 0.82f));
-
-        content.addView(buildOverlayActions(), matchWrap());
 
         root.addView(content, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP
+        ));
+        root.addView(buildOverlayWordCard(), new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER
+        ));
+        root.addView(buildOverlayActions(), new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM
         ));
         return root;
     }
@@ -346,9 +380,9 @@ public class LockQuizOverlayService extends Service {
         card.setOrientation(LinearLayout.VERTICAL);
         card.setGravity(Gravity.CENTER_HORIZONTAL);
         card.setPadding(dp(22), dp(28), dp(22), dp(24));
-        card.setBackground(pillish(Color.argb(42, 255, 255, 255), dp(24), Color.argb(52, 255, 255, 255)));
+        card.setBackground(pillish(Color.argb(166, 252, 254, 255), dp(24), Color.argb(220, 185, 225, 236)));
 
-        overlayWordView = text("", Color.WHITE, 44, Typeface.BOLD);
+        overlayWordView = text("", COLOR_CARD_TEXT, 44, Typeface.BOLD);
         overlayWordView.setMaxLines(1);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             overlayWordView.setAutoSizeTextTypeUniformWithConfiguration(16, 44, 1, TypedValue.COMPLEX_UNIT_SP);
@@ -356,13 +390,13 @@ public class LockQuizOverlayService extends Service {
         overlayWordView.setPadding(dp(10), 0, dp(10), dp(8));
         card.addView(overlayWordView, matchWrap());
 
-        overlayMetaView = text("", Color.argb(180, 255, 255, 255), 15, Typeface.NORMAL);
+        overlayMetaView = text("", COLOR_CARD_MUTED, 15, Typeface.NORMAL);
         card.addView(overlayMetaView, matchWrap());
 
-        overlayMeaningView = text("", Color.WHITE, 20, Typeface.BOLD);
+        overlayMeaningView = text("", COLOR_CARD_TEXT, 20, Typeface.BOLD);
         overlayMeaningView.setGravity(Gravity.CENTER);
         overlayMeaningView.setPadding(dp(16), dp(16), dp(16), dp(16));
-        overlayMeaningView.setBackground(pillish(Color.argb(42, 255, 255, 255), dp(16), Color.argb(38, 255, 255, 255)));
+        overlayMeaningView.setBackground(pillish(Color.argb(160, 246, 253, 255), dp(16), Color.argb(220, 176, 226, 238)));
         overlayMeaningView.setOnClickListener(v -> {
             showingEnglishMeaning = !showingEnglishMeaning;
             updateOverlayMeaning();
@@ -375,7 +409,7 @@ public class LockQuizOverlayService extends Service {
         meaningParams.setMargins(0, dp(18), 0, 0);
         card.addView(overlayMeaningView, meaningParams);
 
-        TextView hint = text("Tap meaning to switch Korean / English", Color.argb(145, 255, 255, 255), 12, Typeface.NORMAL);
+        TextView hint = text("Tap meaning to switch Korean / English", COLOR_CARD_SOFT, 12, Typeface.NORMAL);
         hint.setPadding(0, dp(8), 0, 0);
         card.addView(hint, matchWrap());
         return card;
@@ -385,63 +419,116 @@ public class LockQuizOverlayService extends Service {
         LinearLayout shell = new LinearLayout(this);
         shell.setOrientation(LinearLayout.VERTICAL);
         shell.setGravity(Gravity.CENTER_HORIZONTAL);
+        shell.setPadding(0, 0, 0, dp(14));
 
         LinearLayout slideBar = new LinearLayout(this);
         slideBar.setOrientation(LinearLayout.HORIZONTAL);
         slideBar.setGravity(Gravity.CENTER_VERTICAL);
         slideBar.setPadding(dp(18), dp(14), dp(18), dp(14));
-        slideBar.setBackground(pill(Color.argb(38, 255, 255, 255), Color.argb(54, 255, 255, 255)));
+        slideBar.setBackground(pill(Color.argb(168, 252, 254, 255), Color.argb(224, 153, 217, 235)));
 
-        overlayUnlockHint = text("< Unlock", Color.WHITE, 15, Typeface.BOLD);
+        overlayUnlockHint = text("< Unlock", COLOR_CARD_TEXT, 15, Typeface.BOLD);
         overlayUnlockHint.setAlpha(0.74f);
         slideBar.addView(overlayUnlockHint, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
 
-        TextView centerIcon = text("|", Color.argb(130, 255, 255, 255), 13, Typeface.BOLD);
+        TextView centerIcon = text("|", Color.rgb(96, 126, 145), 13, Typeface.BOLD);
         slideBar.addView(centerIcon, wrapWrap());
 
-        overlayQuizHint = text("Quiz >", Color.WHITE, 15, Typeface.BOLD);
+        overlayQuizHint = text("Quiz >", COLOR_CARD_TEXT, 15, Typeface.BOLD);
         overlayQuizHint.setAlpha(0.74f);
         overlayQuizHint.setGravity(Gravity.END);
         slideBar.addView(overlayQuizHint, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
 
         shell.addView(slideBar, new LinearLayout.LayoutParams(dp(286), LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        overlayRewardHint = text("", Color.argb(170, 255, 255, 255), 12, Typeface.NORMAL);
+        overlayRewardHint = text("", COLOR_CARD_MUTED, 12, Typeface.NORMAL);
         overlayRewardHint.setPadding(0, dp(10), 0, 0);
         shell.addView(overlayRewardHint, matchWrap());
 
-        LinearLayout shortcuts = new LinearLayout(this);
-        shortcuts.setGravity(Gravity.CENTER);
+        FrameLayout shortcuts = new FrameLayout(this);
         shortcuts.setPadding(0, dp(22), 0, 0);
+        shortcuts.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(78)
+        ));
 
         TextView phone = shortcut("Tel");
         phone.setOnClickListener(v -> {
             scheduleIdleTimeout();
             launchHelperAction(new Intent(Intent.ACTION_DIAL, android.net.Uri.parse("tel:")), false);
         });
-        shortcuts.addView(phone, new LinearLayout.LayoutParams(dp(56), dp(56)));
+        shortcuts.addView(phone, new FrameLayout.LayoutParams(
+                dp(56),
+                dp(56),
+                Gravity.START | Gravity.BOTTOM
+        ));
 
-        View space = new View(this);
-        shortcuts.addView(space, new LinearLayout.LayoutParams(dp(38), 1));
+        shortcuts.addView(lockBannerAdSlot(), new FrameLayout.LayoutParams(
+                dp(LOCK_BANNER_WIDTH_DP),
+                dp(54),
+                Gravity.CENTER_HORIZONTAL | Gravity.BOTTOM
+        ));
 
         TextView camera = shortcut("Cam");
         camera.setOnClickListener(v -> {
             scheduleIdleTimeout();
             launchHelperAction(new Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA), false);
         });
-        shortcuts.addView(camera, new LinearLayout.LayoutParams(dp(56), dp(56)));
+        shortcuts.addView(camera, new FrameLayout.LayoutParams(
+                dp(56),
+                dp(56),
+                Gravity.END | Gravity.BOTTOM
+        ));
 
         shell.addView(shortcuts, matchWrap());
         return shell;
     }
 
+    private View lockBannerAdSlot() {
+        FrameLayout slot = new FrameLayout(this);
+        slot.setPadding(0, 0, 0, 0);
+        slot.setBackgroundColor(Color.TRANSPARENT);
+
+        TextView label = text("AD", Color.rgb(96, 126, 145), 10, Typeface.BOLD);
+        label.setGravity(Gravity.CENTER);
+        slot.addView(label, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+        ));
+
+        overlayBannerAdView = new AdView(this);
+        overlayBannerAdView.setAdUnitId(getString(R.string.admob_lock_banner_unit_id));
+        overlayBannerAdView.setAdSize(AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(this, LOCK_BANNER_WIDTH_DP));
+        overlayBannerAdView.setAdListener(new AdListener() {
+            @Override
+            public void onAdFailedToLoad(LoadAdError loadAdError) {
+                Log.w(TAG, "Overlay lock banner failed to load: " + loadAdError.getMessage());
+            }
+        });
+        slot.addView(overlayBannerAdView, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER
+        ));
+        overlayBannerAdView.loadAd(new AdRequest.Builder().build());
+        return slot;
+    }
+
     private void hideOverlay() {
         cancelPendingLockQuizLaunch();
+        hideOverlayForLaunch();
+    }
+
+    private void hideOverlayForLaunch() {
         mainHandler.removeCallbacks(clockRefresh);
         mainHandler.removeCallbacks(idleTimeout);
         if (velocityTracker != null) {
             velocityTracker.recycle();
             velocityTracker = null;
+        }
+        if (overlayBannerAdView != null) {
+            overlayBannerAdView.destroy();
+            overlayBannerAdView = null;
         }
         if (overlayView == null || windowManager == null) {
             overlayView = null;
@@ -466,7 +553,8 @@ public class LockQuizOverlayService extends Service {
         }
         try {
             View cover = new View(this);
-            cover.setBackground(lockBackground());
+            cover.setBackgroundColor(Color.rgb(236, 224, 255));
+            cover.setAlpha(1f);
             cover.setSystemUiVisibility(
                     View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
                             | View.SYSTEM_UI_FLAG_FULLSCREEN
@@ -531,15 +619,6 @@ public class LockQuizOverlayService extends Service {
             return;
         }
         instance.mainHandler.post(instance::hideLaunchCover);
-    }
-
-    static void dismissLaunchCoverIfPresentDelayed(long delayMs) {
-        LockQuizOverlayService instance = activeInstance;
-        if (instance == null) {
-            return;
-        }
-        instance.mainHandler.removeCallbacks(instance.coverDismissTimeout);
-        instance.mainHandler.postDelayed(instance.coverDismissTimeout, Math.max(0L, delayMs));
     }
 
     static void suppressUntilNextScreenOff() {
@@ -727,7 +806,7 @@ public class LockQuizOverlayService extends Service {
     private void loadNotificationWordAsync() {
         final int loadToken = ++notificationWordLoadToken;
         new Thread(() -> {
-            WordEntry loadedWord = loadRandomWordForToday();
+            WordLibrary.WordEntry loadedWord = loadRandomWordForToday();
             mainHandler.post(() -> {
                 if (loadToken != notificationWordLoadToken) {
                     return;
@@ -752,7 +831,7 @@ public class LockQuizOverlayService extends Service {
 
         String title = "Lock quiz is active";
         String content = "Today's words are ready on your lock screen.";
-        String bigText = "Wake the phone to review one word before opening NRC Quiz.";
+        String bigText = "Wake the phone to review one word before opening EnglishSlide.";
 
         if (currentNotificationWord != null) {
             title = currentNotificationWord.word + " (" + currentNotificationWord.part + ")";
@@ -769,7 +848,7 @@ public class LockQuizOverlayService extends Service {
                 .setContentTitle(title)
                 .setContentText(content)
                 .setStyle(new Notification.BigTextStyle().bigText(bigText))
-                .setSubText("NRC Quiz")
+                .setSubText("EnglishSlide")
                 .setContentIntent(pendingIntent)
                 .setOngoing(true)
                 .setAutoCancel(false)
@@ -788,59 +867,17 @@ public class LockQuizOverlayService extends Service {
         return flags;
     }
 
-    private WordEntry loadRandomWordForToday() {
+    private WordLibrary.WordEntry loadRandomWordForToday() {
         try {
-            InputStream input = getAssets().open("www/data/words.json");
-            ByteArrayOutputStream output = new ByteArrayOutputStream();
-            byte[] buffer = new byte[4096];
-            int read;
-            while ((read = input.read(buffer)) != -1) {
-                output.write(buffer, 0, read);
-            }
-            JSONArray words = new JSONArray(output.toString(StandardCharsets.UTF_8.name()));
-
-            int maxUnit = 1;
-            List<WordEntry> allWords = new ArrayList<>();
-            for (int i = 0; i < words.length(); i++) {
-                JSONObject word = words.getJSONObject(i);
-                WordEntry entry = new WordEntry(
-                        word.optString("word", "benefit"),
-                        word.optString("part", "n."),
-                        word.optInt("unit", 1),
-                        word.optString("korean", "advantage; profit"),
-                        word.optString("english", "a good or helpful result")
-                );
-                maxUnit = Math.max(maxUnit, entry.unit);
-                allWords.add(entry);
-            }
-
-            Calendar start = Calendar.getInstance();
-            start.set(2026, Calendar.MAY, 5, 0, 0, 0);
-            start.set(Calendar.MILLISECOND, 0);
-
-            Calendar today = Calendar.getInstance();
-            today.set(Calendar.HOUR_OF_DAY, 0);
-            today.set(Calendar.MINUTE, 0);
-            today.set(Calendar.SECOND, 0);
-            today.set(Calendar.MILLISECOND, 0);
-
-            long dayOffset = (today.getTimeInMillis() - start.getTimeInMillis()) / ONE_DAY_MS;
-            int todayUnit = (int) Math.floorMod(dayOffset, maxUnit) + 1;
-
-            List<WordEntry> todayWords = new ArrayList<>();
-            for (WordEntry entry : allWords) {
-                if (entry.unit == todayUnit) {
-                    todayWords.add(entry);
-                }
-            }
-
+            WordLibrary.WordLoadResult result = WordLibrary.loadTodayWords(this);
+            List<WordLibrary.WordEntry> todayWords = result.words;
             if (!todayWords.isEmpty()) {
                 return todayWords.get(new Random().nextInt(todayWords.size()));
             }
         } catch (Exception error) {
             Log.w(TAG, "Could not load lock quiz word.", error);
         }
-        return null;
+        return WordLibrary.fallbackWord();
     }
 
     private void createNotificationChannel() {
@@ -850,22 +887,11 @@ public class LockQuizOverlayService extends Service {
                 "Lockscreen quiz",
                 NotificationManager.IMPORTANCE_LOW
         );
-        channel.setDescription("Keeps NRC Quiz ready for lockscreen word review.");
+        channel.setDescription("Keeps EnglishSlide ready for lockscreen word review.");
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (manager != null) {
             manager.createNotificationChannel(channel);
         }
-    }
-
-    private GradientDrawable lockBackground() {
-        return new GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{
-                        Color.rgb(18, 31, 45),
-                        Color.rgb(31, 69, 78),
-                        Color.rgb(17, 24, 37)
-                }
-        );
     }
 
     private GradientDrawable rounded(int color, float radius) {
@@ -877,7 +903,7 @@ public class LockQuizOverlayService extends Service {
 
     private GradientDrawable pillish(int color, float radius, int strokeColor) {
         GradientDrawable drawable = rounded(color, radius);
-        drawable.setStroke(dp(1), strokeColor);
+        drawable.setStroke(dp(2), strokeColor);
         return drawable;
     }
 
@@ -886,9 +912,9 @@ public class LockQuizOverlayService extends Service {
     }
 
     private TextView shortcut(String value) {
-        TextView view = text(value, Color.WHITE, 13, Typeface.BOLD);
+        TextView view = text(value, Color.rgb(30, 91, 118), 13, Typeface.BOLD);
         view.setGravity(Gravity.CENTER);
-        view.setBackground(pill(Color.argb(38, 255, 255, 255), Color.argb(60, 255, 255, 255)));
+        view.setBackground(pill(Color.argb(168, 252, 254, 255), Color.argb(224, 153, 217, 235)));
         return view;
     }
 
@@ -921,19 +947,4 @@ public class LockQuizOverlayService extends Service {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
     }
 
-    private static class WordEntry {
-        final String word;
-        final String part;
-        final int unit;
-        final String korean;
-        final String english;
-
-        WordEntry(String word, String part, int unit, String korean, String english) {
-            this.word = word;
-            this.part = part;
-            this.unit = unit;
-            this.korean = korean;
-            this.english = english;
-        }
-    }
 }

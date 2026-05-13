@@ -3,22 +3,25 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#1967d2" />
+    <meta name="theme-color" content="#4cb6f6" />
     <meta
       name="description"
       content="영어 퀴즈를 풀며 NRC 서비스 쿠폰 포인트를 적립하는 리워드 학습 앱"
     />
-    <title>NRC Quiz</title>
+    <title>EnglishSlide</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="./assets/icon.svg" />
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="icon" href="./assets/app-icon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="./assets/app-icon.png" />
+    <link rel="stylesheet" href="./styles.css?v=20260510-quiz-header-align-2" />
   </head>
   <body>
     <section id="loginView" class="login-view">
       <div class="login-panel">
-        <div class="brand-mark">NQ</div>
-        <p class="eyebrow">NRC Quiz</p>
+        <div class="login-mascot" aria-hidden="true">
+          <img src="./assets/mascot-wave.png" alt="" />
+        </div>
+        <div class="brand-mark">ES</div>
+        <p class="eyebrow">EnglishSlide</p>
         <h1>로그인</h1>
         <p id="loginGuide">Google 계정으로 로그인한 뒤 앱에서 사용할 닉네임을 만들어 주세요.</p>
         <button id="googleLoginButton" class="google-button" type="button">
@@ -63,11 +66,7 @@
 
         <section id="homeView" class="view active" data-title="홈">
           <div class="stats-grid">
-            <article class="metric primary">
-              <p>오늘 전체 광고 수익</p>
-              <strong id="todayRevenue">1,250,400원</strong>
-              <span>95% 사용자 리워드 환원</span>
-            </article>
+            <article id="activityCalendarCard" class="metric calendar-card"></article>
             <article class="metric">
               <p>퀴즈 진행</p>
               <strong><span id="quizSolved">0</span>문제</strong>
@@ -80,14 +79,25 @@
             </article>
           </div>
 
+          <article class="mascot-card">
+            <div class="mascot-copy">
+              <p class="eyebrow">EnglishSlide Buddy</p>
+              <strong>오늘도 짧게, 꾸준히 밀어볼까요?</strong>
+              <span>단어 복습과 퀴즈 흐름을 캐릭터 톤에 맞춰 더 가볍게 정리했어요.</span>
+            </div>
+            <img src="./assets/mascot-book.png" alt="" />
+          </article>
+
           <section class="dashboard-band">
             <div class="daily-card">
+              <img class="card-mascot corner" src="./assets/mascot-flag.png" alt="" aria-hidden="true" />
               <p class="eyebrow">오늘의 추천</p>
               <h3>오늘의 10문제 세트</h3>
               <p>생활 영어, 비즈니스, 여행 표현을 섞어 출제합니다.</p>
               <button id="startQuiz" class="action-button" type="button">도전하기</button>
             </div>
             <div class="recommend-card">
+              <img class="card-mascot" src="./assets/mascot-spark.png" alt="" aria-hidden="true" />
               <span>AI 추천</span>
               <strong>1만원 금액권</strong>
               <p>오늘의 퀴즈를 완료하면 교환까지 더 가까워집니다.</p>
@@ -97,9 +107,12 @@
 
         <section id="quizView" class="view quiz-view" data-title="퀴즈">
           <div id="quizModeSelect" class="mode-select-panel hidden">
-            <p class="eyebrow">Selection</p>
+            <p id="quizSelectEyebrow" class="eyebrow">QUIZ</p>
             <h3>학습 모드 선택</h3>
             <p>원하는 퀴즈를 선택해주세요.</p>
+            <div class="quiz-mascot-banner" aria-hidden="true">
+              <img src="./assets/mascot-headset.png" alt="" />
+            </div>
             <div class="mode-buttons">
               <button class="action-button outline mode-btn" type="button" data-mode="eng">영영 퀴즈</button>
               <button class="action-button outline mode-btn" type="button" data-mode="kor">영한 퀴즈</button>
@@ -122,8 +135,7 @@
             <strong>오늘의 퀴즈를 완료했습니다</strong>
             <p>광고를 본 뒤 10문제 정답률에 따라 포인트가 적립됩니다.</p>
             <div class="review-actions">
-              <button id="skipRewardButton" class="outline-button" type="button">Skip</button>
-              <button id="claimRewardButton" class="action-button" type="button">보상 획득</button>
+              <button id="claimRewardButton" class="action-button" type="button" disabled>보상 획득</button>
             </div>
           </div>
           <section id="reviewPanel" class="review-panel hidden">
@@ -140,51 +152,63 @@
           <div id="quizFeedback" class="feedback-panel hidden"></div>
         </section>
 
-        <section id="studyView" class="view study-view" data-title="학습">
+        <section id="studyView" class="view study-view" data-title="&#54617;&#49845;">
           <div class="study-shell">
-            <section class="study-library-card">
-              <div>
-                <p class="eyebrow">Word Library</p>
-                <h3>전체 단어 학습</h3>
-                <p>지금은 기본 단어장을 제공하고, 나중에 책이 추가되면 여기서 골라서 공부할 수 있게 준비해둘게요.</p>
-              </div>
-              <div class="study-book-list" id="studyBookList">
-                <button class="study-book-chip active" type="button" data-book="default">기본 단어장</button>
-                <button class="study-book-chip" type="button" disabled>다음 책 준비 중</button>
-              </div>
-            </section>
-
-            <section class="study-overview-grid">
-              <article class="study-overview-card">
-                <p class="eyebrow">단어 수</p>
-                <strong id="studyWordCount">0개</strong>
-                <span>전체 수록 단어</span>
-              </article>
-              <article class="study-overview-card">
-                <p class="eyebrow">유닛</p>
-                <strong id="studyUnitCount">0개</strong>
-                <span>학습 가능한 챕터</span>
-              </article>
-            </section>
-
-            <section class="study-search-card">
-              <label class="study-search-label" for="studySearchInput">단어 찾기</label>
+            <section id="studySearchSection" class="study-search-card">
+              <label id="studySearchLabel" class="study-search-label" for="studySearchInput">&#45800;&#50612; &#52286;&#44592;</label>
               <input
                 id="studySearchInput"
                 class="study-search-input"
                 type="search"
-                placeholder="영단어, 뜻, 품사로 검색"
+                placeholder="&#51204;&#52404; &#45800;&#50612;&#50640;&#49436; &#44160;&#49353;"
                 autocomplete="off"
               />
-              <p id="studySearchMeta" class="study-search-meta">전체 단어를 불러오는 중입니다.</p>
+              <p id="studySearchMeta" class="study-search-meta">&#45800;&#50612; &#45936;&#51060;&#53552;&#47484; &#BD88;&#47084;&#50724;&#45716; &#51473;&#51077;&#45768;&#45796;.</p>
             </section>
 
-            <section id="studyUnitList" class="study-unit-list"></section>
+            <section id="studySeriesSection" class="study-library-card">
+              <img class="section-mascot" src="./assets/mascot-book.png" alt="" aria-hidden="true" />
+              <div>
+                <p class="eyebrow">Word Library</p>
+                <h3 id="studyIntroTitle">&#52293;&#48324; &#45800;&#50612; &#54617;&#49845;</h3>
+                <p id="studyIntroCopy">&#52293;&#51012; &#47676;&#51200; &#44256;&#47476;&#44256;, &#44428;&#44284; &#50976;&#45791;&#51012; &#52264;&#47168;&#45824;&#47196; &#49440;&#53469;&#54644;&#49436; &#54644;&#45817; &#50976;&#45791;&#51032; &#45800;&#50612;&#47484; &#51069;&#50612;&#48372;&#49464;&#50836;.</p>
+              </div>
+              <div class="study-book-list" id="studySeriesList">
+                <button class="study-book-chip active" type="button" data-series="1000">1000</button>
+                <button class="study-book-chip" type="button" data-series="2000">2000</button>
+                <button class="study-book-chip" type="button" data-series="4000">4000</button>
+              </div>
+            </section>
+
+            <section id="studyBookSection" class="study-unit-picker-card">
+              <div class="study-picker-head">
+                <div>
+                  <p class="eyebrow">Book</p>
+                  <h3 id="studyBookPickerTitle">&#44428; &#49440;&#53469;</h3>
+                </div>
+                <span id="studyBookCount" class="study-unit-count">0&#44428;</span>
+              </div>
+              <div id="studyBookTabs" class="study-unit-tabs"></div>
+            </section>
+
+            <section id="studyUnitSection" class="study-unit-picker-card">
+              <div class="study-picker-head">
+                <div>
+                  <p class="eyebrow">Unit</p>
+                  <h3 id="studyUnitPickerTitle">&#50976;&#45791; &#49440;&#53469;</h3>
+                </div>
+                <span id="studyUnitCount" class="study-unit-count">0&#44060;</span>
+              </div>
+              <div id="studyUnitTabs" class="study-unit-tabs"></div>
+            </section>
+
+            <section id="studyResultsSection" class="study-unit-list"></section>
           </div>
         </section>
 
         <section id="shopView" class="view" data-title="상점">
           <div class="shop-head">
+            <img class="section-mascot" src="./assets/mascot-spark.png" alt="" aria-hidden="true" />
             <div>
               <p class="eyebrow">Point Shop</p>
               <h3>포인트 금액권</h3>
@@ -197,6 +221,7 @@
         <section id="reportView" class="view" data-title="마이페이지">
           <div class="report-layout">
             <article class="profile-panel">
+              <img class="panel-mascot" src="./assets/mascot-happy.png" alt="" aria-hidden="true" />
               <div id="profileAvatar" class="avatar">NQ</div>
               <h3 id="profileName">오늘도 학습 중</h3>
               <p>기본 일일 적립 한도 1,000P</p>
@@ -232,6 +257,7 @@
               <div id="couponList" class="coupon-list"></div>
             </article>
             <article class="learning-panel">
+              <img class="panel-mascot subtle" src="./assets/mascot-thinking.png" alt="" aria-hidden="true" />
               <p class="eyebrow">My Stats</p>
               <h3>이용 현황</h3>
               <div class="report-row">
@@ -280,8 +306,18 @@
         <p id="loadingMessage">서버와 통신하고 있습니다.</p>
       </div>
     </div>
+    <div id="quizConfirmOverlay" class="loading-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="quizConfirmTitle">
+      <div class="loading-panel quiz-confirm-panel">
+        <strong id="quizConfirmTitle">?? ??</strong>
+        <p id="quizConfirmMessage">??? ?? ??? ???? ?? ??? ?? ??? ??? ? ????.</p>
+        <div class="review-actions quiz-confirm-actions">
+          <button id="quizConfirmCancel" class="outline-button" type="button">??</button>
+          <button id="quizConfirmAccept" class="action-button" type="button">??</button>
+        </div>
+      </div>
+    </div>
     <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
-    <script src="./app.js?v=google-login"></script>
+    <script src="./app.js?v=20260510-quiz-summary-visible-2"></script>
   </body>
 </html>

@@ -1,6 +1,6 @@
 {
-  "name": "NRC Quiz",
-  "short_name": "NRC Quiz",
+  "name": "EnglishSlide",
+  "short_name": "EnglishSlide",
   "description": "영어 퀴즈를 풀며 NRC 서비스 쿠폰 포인트를 적립하는 리워드 학습 앱",
   "start_url": "./index.html",
   "scope": "./",
@@ -12,9 +12,9 @@
   "categories": ["education", "health", "lifestyle"],
   "icons": [
     {
-      "src": "./assets/icon.svg",
-      "sizes": "512x512",
-      "type": "image/svg+xml",
+      "src": "./assets/app-icon.png",
+      "sizes": "1254x1254",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ],
@@ -23,13 +23,13 @@
       "name": "오늘의 퀴즈",
       "short_name": "퀴즈",
       "url": "./index.html#quiz",
-      "icons": [{ "src": "./assets/icon.svg", "sizes": "512x512", "type": "image/svg+xml" }]
+      "icons": [{ "src": "./assets/app-icon.png", "sizes": "1254x1254", "type": "image/png" }]
     },
     {
       "name": "포인트 상점",
       "short_name": "상점",
       "url": "./index.html#shop",
-      "icons": [{ "src": "./assets/icon.svg", "sizes": "512x512", "type": "image/svg+xml" }]
+      "icons": [{ "src": "./assets/app-icon.png", "sizes": "1254x1254", "type": "image/png" }]
     }
   ]
 }

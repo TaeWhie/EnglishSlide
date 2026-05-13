@@ -3,9 +3,11 @@ package com.nrc.quiz;
 import android.app.Activity;
 import android.app.KeyguardManager;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
@@ -27,15 +29,17 @@ import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.view.ViewTreeObserver;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
+import com.google.android.gms.ads.AdListener;
+import com.google.android.gms.ads.AdRequest;
+import com.google.android.gms.ads.AdSize;
+import com.google.android.gms.ads.AdView;
+import com.google.android.gms.ads.LoadAdError;
+import com.google.android.gms.ads.MobileAds;
 
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -46,14 +50,27 @@ public class LockQuizActivity extends Activity {
     public static final String EXTRA_ACTION = "com.nrc.quiz.EXTRA_LOCK_ACTION";
     public static final String ACTION_UNLOCK = "unlock";
     public static final String ACTION_OPEN_QUIZ = "open_quiz";
-    private static final long ONE_DAY_MS = 24L * 60L * 60L * 1000L;
     private static final long DEFAULT_IDLE_TIMEOUT_MS = 30_000L;
     private static final long MIN_IDLE_TIMEOUT_MS = 1_000L;
     private static final float SWIPE_THRESHOLD_DP = 84f;
     private static final float SWIPE_VELOCITY_DP = 420f;
+    private static final int COLOR_CARD_TEXT = Color.rgb(24, 58, 78);
+    private static final int COLOR_CARD_MUTED = Color.rgb(88, 120, 139);
+    private static final int COLOR_CARD_SOFT = Color.rgb(110, 141, 160);
+    private static final int COLOR_TEXT_PRIMARY = COLOR_CARD_TEXT;
+    private static final int COLOR_TEXT_SECONDARY = Color.rgb(64, 97, 118);
+    private static final int COLOR_TEXT_MUTED = Color.rgb(102, 132, 150);
+    private static final int COLOR_PANEL = Color.argb(102, 255, 255, 255);
+    private static final int COLOR_PANEL_STROKE = Color.argb(86, 184, 233, 241);
+    private static final int COLOR_CHIP = Color.argb(118, 255, 255, 255);
+    private static final int COLOR_CHIP_STROKE = Color.argb(102, 157, 222, 238);
+    private static final int COLOR_TODAY = Color.rgb(103, 205, 241);
+    private static final int COLOR_ACTION = Color.rgb(141, 230, 232);
+    private static final int COLOR_ACTION_DEEP = Color.rgb(76, 182, 246);
+    private static final int LOCK_BANNER_WIDTH_DP = 236;
 
     private final Handler clockHandler = new Handler(Looper.getMainLooper());
-    private final List<WordEntry> todayWords = new ArrayList<>();
+    private final List<WordLibrary.WordEntry> todayWords = new ArrayList<>();
     private int wordIndex = 0;
     private int todayUnit = 1;
     private int maxUnit = 1;
@@ -71,6 +88,7 @@ public class LockQuizActivity extends Activity {
     private TextView rewardHint;
     private LinearLayout contentLayout;
     private LinearLayout bottomActionsLayout;
+    private AdView lockBannerAdView;
 
     private VelocityTracker velocityTracker;
     private float swipeStartX = 0f;
@@ -98,6 +116,24 @@ public class LockQuizActivity extends Activity {
         }
     };
 
+    private final Runnable clearWakeBehavior = new Runnable() {
+        @Override
+        public void run() {
+            disableTurnScreenOnBehavior();
+        }
+    };
+
+    private final android.content.BroadcastReceiver screenStateReceiver =
+            new android.content.BroadcastReceiver() {
+                @Override
+                public void onReceive(android.content.Context context, Intent intent) {
+                    if (Intent.ACTION_SCREEN_OFF.equals(intent.getAction()) && !isFinishing()) {
+                        finish();
+                        overridePendingTransition(0, 0);
+                    }
+                }
+            };
+
     private final ViewTreeObserver.OnGlobalLayoutListener immersiveLayoutListener =
             new ViewTreeObserver.OnGlobalLayoutListener() {
                 @Override
@@ -112,18 +148,23 @@ public class LockQuizActivity extends Activity {
         super.onCreate(savedInstanceState);
         configureLockWindow();
         overridePendingTransition(0, 0);
+        MobileAds.initialize(this, initializationStatus -> {
+        });
 
         if (!isEnabled() || !isDeviceLocked()) {
+            LockQuizOverlayService.dismissLaunchCoverIfPresent();
             finish();
             return;
         }
 
         String requestedAction = getIntent().getStringExtra(EXTRA_ACTION);
         if (ACTION_UNLOCK.equals(requestedAction)) {
+            LockQuizOverlayService.dismissLaunchCoverIfPresent();
             performUnlock();
             return;
         }
         if (ACTION_OPEN_QUIZ.equals(requestedAction)) {
+            LockQuizOverlayService.dismissLaunchCoverIfPresent();
             performOpenQuiz();
             return;
         }
@@ -146,11 +187,13 @@ public class LockQuizActivity extends Activity {
         loadTodayWordsAsync();
         clockTick.run();
         scheduleIdleTimeout();
+        registerReceiver(screenStateReceiver, new IntentFilter(Intent.ACTION_SCREEN_OFF));
         clockHandler.post(immersiveRefresh);
         clockHandler.postDelayed(immersiveRefresh, 16L);
         clockHandler.postDelayed(immersiveRefresh, 32L);
         clockHandler.postDelayed(immersiveRefresh, 80L);
         clockHandler.postDelayed(immersiveRefresh, 160L);
+        clockHandler.postDelayed(clearWakeBehavior, 600L);
     }
 
     @Override
@@ -163,6 +206,7 @@ public class LockQuizActivity extends Activity {
         clockHandler.postDelayed(immersiveRefresh, 32L);
         clockHandler.postDelayed(immersiveRefresh, 80L);
         clockHandler.postDelayed(immersiveRefresh, 160L);
+        clockHandler.postDelayed(clearWakeBehavior, 600L);
         if (!isEnabled() || !isDeviceLocked()) {
             finish();
         }
@@ -171,11 +215,13 @@ public class LockQuizActivity extends Activity {
     @Override
     public void onAttachedToWindow() {
         super.onAttachedToWindow();
+        LockQuizOverlayService.dismissLaunchCoverIfPresent();
     }
 
     @Override
     protected void onPostResume() {
         super.onPostResume();
+        LockQuizOverlayService.dismissLaunchCoverIfPresent();
     }
 
     @Override
@@ -191,9 +237,15 @@ public class LockQuizActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        LockQuizOverlayService.dismissLaunchCoverIfPresent();
         clockHandler.removeCallbacks(clockTick);
         clockHandler.removeCallbacks(idleTimeout);
         clockHandler.removeCallbacks(immersiveRefresh);
+        clockHandler.removeCallbacks(clearWakeBehavior);
+        try {
+            unregisterReceiver(screenStateReceiver);
+        } catch (IllegalArgumentException ignored) {
+        }
         View decorView = getWindow().getDecorView();
         if (decorView != null) {
             decorView.setOnSystemUiVisibilityChangeListener(null);
@@ -205,6 +257,10 @@ public class LockQuizActivity extends Activity {
         if (velocityTracker != null) {
             velocityTracker.recycle();
             velocityTracker = null;
+        }
+        if (lockBannerAdView != null) {
+            lockBannerAdView.destroy();
+            lockBannerAdView = null;
         }
         super.onDestroy();
     }
@@ -220,13 +276,30 @@ public class LockQuizActivity extends Activity {
         }
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         window.setWindowAnimations(0);
+        window.getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        );
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            window.setStatusBarColor(Color.TRANSPARENT);
+            window.setNavigationBarColor(Color.TRANSPARENT);
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             WindowManager.LayoutParams params = window.getAttributes();
             params.layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
             window.setAttributes(params);
         }
-        window.setBackgroundDrawable(lockBackground());
+        window.setBackgroundDrawable(new ColorDrawable(Color.rgb(232, 247, 251)));
+    }
+
+    private void disableTurnScreenOnBehavior() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setTurnScreenOn(false);
+        } else {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
+        }
     }
 
     private void applyImmersiveMode() {
@@ -253,7 +326,7 @@ public class LockQuizActivity extends Activity {
 
     private View buildContent() {
         FrameLayout root = new FrameLayout(this);
-        root.setBackground(lockBackground());
+        root.setBackgroundColor(Color.rgb(232, 247, 251));
         root.setOnTouchListener((v, event) -> {
             handleSwipeGesture(event);
             return true;
@@ -262,25 +335,16 @@ public class LockQuizActivity extends Activity {
         contentLayout = new LinearLayout(this);
         contentLayout.setOrientation(LinearLayout.VERTICAL);
         contentLayout.setGravity(Gravity.CENTER_HORIZONTAL);
-        contentLayout.setPadding(dp(24), dp(54), dp(24), dp(34));
+        contentLayout.setPadding(dp(24), dp(86), dp(24), 0);
 
-        timeView = text("", Color.WHITE, 76, Typeface.NORMAL);
+        timeView = text("", COLOR_TEXT_PRIMARY, 76, Typeface.NORMAL);
         timeView.setIncludeFontPadding(false);
         contentLayout.addView(timeView, matchWrap());
 
-        dateView = text("", Color.argb(210, 255, 255, 255), 17, Typeface.NORMAL);
+        dateView = text("", COLOR_TEXT_SECONDARY, 17, Typeface.NORMAL);
         contentLayout.addView(dateView, matchWrap());
 
-        View spacerTop = new View(this);
-        contentLayout.addView(spacerTop, new LinearLayout.LayoutParams(1, 0, 1.05f));
-
-        contentLayout.addView(wordCard(), matchWrap());
-
-        View spacerBottom = new View(this);
-        contentLayout.addView(spacerBottom, new LinearLayout.LayoutParams(1, 0, 0.82f));
-
         bottomActionsLayout = bottomActions();
-        contentLayout.addView(bottomActionsLayout, matchWrap());
 
         root.setOnApplyWindowInsetsListener((v, insets) -> {
             applyContentInsets(insets);
@@ -289,9 +353,24 @@ public class LockQuizActivity extends Activity {
             return insets;
         });
 
-        root.addView(contentLayout, new FrameLayout.LayoutParams(
+        root.addView(lockBackgroundImage(), new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
+        ));
+        root.addView(contentLayout, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP
+        ));
+        root.addView(wordCard(), new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER
+        ));
+        root.addView(bottomActionsLayout, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM
         ));
         return root;
     }
@@ -313,9 +392,9 @@ public class LockQuizActivity extends Activity {
 
         contentLayout.setPadding(
                 dp(24),
-                dp(36) + topInset,
+                dp(70) + topInset,
                 dp(24),
-                dp(18) + bottomInset
+                0
         );
 
         if (bottomActionsLayout != null) {
@@ -323,7 +402,7 @@ public class LockQuizActivity extends Activity {
                     0,
                     0,
                     0,
-                    Math.max(dp(12), bottomInset)
+                    Math.max(dp(14), bottomInset + dp(8))
             );
         }
     }
@@ -333,11 +412,11 @@ public class LockQuizActivity extends Activity {
         card.setOrientation(LinearLayout.VERTICAL);
         card.setGravity(Gravity.CENTER_HORIZONTAL);
         card.setPadding(dp(22), dp(28), dp(22), dp(24));
-        card.setBackground(pillish(Color.argb(42, 255, 255, 255), dp(24), Color.argb(52, 255, 255, 255)));
+        card.setBackground(pillish(Color.argb(166, 252, 254, 255), dp(24), Color.argb(220, 185, 225, 236)));
 
-        counterView = text("", Color.argb(210, 255, 255, 255), 13, Typeface.BOLD);
+        counterView = text("", Color.rgb(32, 76, 98), 13, Typeface.BOLD);
         counterView.setPadding(dp(12), dp(5), dp(12), dp(5));
-        counterView.setBackground(pill(Color.argb(34, 255, 255, 255), Color.TRANSPARENT));
+        counterView.setBackground(pill(Color.argb(168, 240, 252, 255), Color.argb(220, 170, 222, 236)));
         card.addView(counterView, wrapWrap());
 
         LinearLayout wordRow = new LinearLayout(this);
@@ -349,7 +428,7 @@ public class LockQuizActivity extends Activity {
         prev.setOnClickListener(v -> moveWord(-1));
         wordRow.addView(prev, new LinearLayout.LayoutParams(dp(42), dp(42)));
 
-        wordView = text("", Color.WHITE, 46, Typeface.BOLD);
+        wordView = text("", COLOR_CARD_TEXT, 46, Typeface.BOLD);
         wordView.setPadding(dp(10), 0, dp(10), 0);
         wordView.setMaxLines(1);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -363,13 +442,13 @@ public class LockQuizActivity extends Activity {
 
         card.addView(wordRow, matchWrap());
 
-        metaView = text("", Color.argb(180, 255, 255, 255), 15, Typeface.NORMAL);
+        metaView = text("", COLOR_CARD_MUTED, 15, Typeface.NORMAL);
         card.addView(metaView, matchWrap());
 
-        meaningView = text("", Color.WHITE, 21, Typeface.BOLD);
+        meaningView = text("", COLOR_CARD_TEXT, 21, Typeface.BOLD);
         meaningView.setGravity(Gravity.CENTER);
         meaningView.setPadding(dp(16), dp(16), dp(16), dp(16));
-        meaningView.setBackground(pillish(Color.argb(42, 255, 255, 255), dp(16), Color.argb(38, 255, 255, 255)));
+        meaningView.setBackground(pillish(Color.argb(160, 246, 253, 255), dp(16), Color.argb(220, 176, 226, 238)));
         meaningView.setOnClickListener(v -> toggleMeaning());
         LinearLayout.LayoutParams meaningParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -378,7 +457,7 @@ public class LockQuizActivity extends Activity {
         meaningParams.setMargins(0, dp(22), 0, 0);
         card.addView(meaningView, meaningParams);
 
-        TextView meaningHint = text("Tap meaning to switch Korean / English", Color.argb(145, 255, 255, 255), 12, Typeface.NORMAL);
+        TextView meaningHint = text("Tap meaning to switch Korean / English", COLOR_CARD_SOFT, 12, Typeface.NORMAL);
         meaningHint.setPadding(0, dp(8), 0, 0);
         card.addView(meaningHint, matchWrap());
 
@@ -465,56 +544,96 @@ public class LockQuizActivity extends Activity {
         LinearLayout shell = new LinearLayout(this);
         shell.setOrientation(LinearLayout.VERTICAL);
         shell.setGravity(Gravity.CENTER_HORIZONTAL);
-        shell.setPadding(0, 0, 0, dp(4));
+        shell.setPadding(0, 0, 0, dp(14));
 
         LinearLayout slideBar = new LinearLayout(this);
         slideBar.setOrientation(LinearLayout.HORIZONTAL);
         slideBar.setGravity(Gravity.CENTER_VERTICAL);
         slideBar.setPadding(dp(18), dp(14), dp(18), dp(14));
-        slideBar.setBackground(pill(Color.argb(38, 255, 255, 255), Color.argb(54, 255, 255, 255)));
+        slideBar.setBackground(pill(Color.argb(168, 252, 254, 255), Color.argb(224, 153, 217, 235)));
 
-        unlockHint = text("Unlock", Color.WHITE, 15, Typeface.BOLD);
+        unlockHint = text("Unlock", COLOR_CARD_TEXT, 15, Typeface.BOLD);
         unlockHint.setAlpha(0.74f);
         unlockHint.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
         slideBar.addView(unlockHint, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
 
-        TextView centerIcon = text("|", Color.argb(130, 255, 255, 255), 13, Typeface.BOLD);
+        TextView centerIcon = text("|", Color.rgb(96, 126, 145), 13, Typeface.BOLD);
         centerIcon.setPadding(dp(10), 0, dp(10), 0);
         slideBar.addView(centerIcon, wrapWrap());
 
-        quizHint = text("Quiz", Color.WHITE, 15, Typeface.BOLD);
+        quizHint = text("Quiz", COLOR_CARD_TEXT, 15, Typeface.BOLD);
         quizHint.setAlpha(0.74f);
         quizHint.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
         slideBar.addView(quizHint, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
 
         shell.addView(slideBar, new LinearLayout.LayoutParams(dp(286), LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        rewardHint = text("", Color.argb(170, 255, 255, 255), 12, Typeface.NORMAL);
+        rewardHint = text("", COLOR_CARD_MUTED, 12, Typeface.NORMAL);
         rewardHint.setPadding(0, dp(10), 0, 0);
         rewardHint.setText(shouldShowRewardPrompt() ? "Unlock after one quick word review." : "Word review is active.");
         shell.addView(rewardHint, matchWrap());
 
-        LinearLayout shortcuts = new LinearLayout(this);
-        shortcuts.setGravity(Gravity.CENTER_VERTICAL);
+        FrameLayout shortcuts = new FrameLayout(this);
         shortcuts.setPadding(0, dp(22), 0, 0);
         shortcuts.setLayoutParams(new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
+                dp(78)
         ));
 
         TextView phone = shortcut("Tel");
         phone.setOnClickListener(v -> openPhone());
-        shortcuts.addView(phone, new LinearLayout.LayoutParams(dp(56), dp(56)));
+        shortcuts.addView(phone, new FrameLayout.LayoutParams(
+                dp(56),
+                dp(56),
+                Gravity.START | Gravity.BOTTOM
+        ));
 
-        View space = new View(this);
-        shortcuts.addView(space, new LinearLayout.LayoutParams(0, 1, 1f));
+        shortcuts.addView(lockBannerAdSlot(), new FrameLayout.LayoutParams(
+                dp(LOCK_BANNER_WIDTH_DP),
+                dp(54),
+                Gravity.CENTER_HORIZONTAL | Gravity.BOTTOM
+        ));
 
         TextView camera = shortcut("Cam");
         camera.setOnClickListener(v -> openCamera());
-        shortcuts.addView(camera, new LinearLayout.LayoutParams(dp(56), dp(56)));
+        shortcuts.addView(camera, new FrameLayout.LayoutParams(
+                dp(56),
+                dp(56),
+                Gravity.END | Gravity.BOTTOM
+        ));
 
         shell.addView(shortcuts, matchWrap());
         return shell;
+    }
+
+    private View lockBannerAdSlot() {
+        FrameLayout slot = new FrameLayout(this);
+        slot.setPadding(0, 0, 0, 0);
+        slot.setBackgroundColor(Color.TRANSPARENT);
+
+        TextView label = text("AD", Color.rgb(96, 126, 145), 10, Typeface.BOLD);
+        label.setGravity(Gravity.CENTER);
+        slot.addView(label, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+        ));
+
+        lockBannerAdView = new AdView(this);
+        lockBannerAdView.setAdUnitId(getString(R.string.admob_lock_banner_unit_id));
+        lockBannerAdView.setAdSize(AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(this, LOCK_BANNER_WIDTH_DP));
+        lockBannerAdView.setAdListener(new AdListener() {
+            @Override
+            public void onAdFailedToLoad(LoadAdError loadAdError) {
+                android.util.Log.w("LockQuizActivity", "Lock banner failed to load: " + loadAdError.getMessage());
+            }
+        });
+        slot.addView(lockBannerAdView, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER
+        ));
+        lockBannerAdView.loadAd(new AdRequest.Builder().build());
+        return slot;
     }
 
     private void updateClock() {
@@ -536,7 +655,7 @@ public class LockQuizActivity extends Activity {
     }
 
     private void updateWord() {
-        WordEntry entry = currentWord();
+        WordLibrary.WordEntry entry = currentWord();
         wordView.setText(entry.word);
         metaView.setText(entry.part + " - Unit " + entry.unit);
         counterView.setText("Today Unit " + todayUnit + " - " + (wordIndex + 1) + " / " + todayWords.size());
@@ -544,13 +663,13 @@ public class LockQuizActivity extends Activity {
     }
 
     private void updateMeaning() {
-        WordEntry entry = currentWord();
+        WordLibrary.WordEntry entry = currentWord();
         meaningView.setText(showingEnglishMeaning ? entry.english : entry.korean);
     }
 
-    private WordEntry currentWord() {
+    private WordLibrary.WordEntry currentWord() {
         if (todayWords.isEmpty()) {
-            return new WordEntry("benefit", "n.", 1, "advantage; profit", "a good or helpful result");
+            return WordLibrary.fallbackWord();
         }
         return todayWords.get(wordIndex);
     }
@@ -656,7 +775,7 @@ public class LockQuizActivity extends Activity {
     private void loadTodayWordsAsync() {
         final int loadToken = ++wordsLoadToken;
         new Thread(() -> {
-            WordLoadResult result = buildTodayWords();
+            WordLibrary.WordLoadResult result = WordLibrary.loadTodayWords(this);
             runOnUiThread(() -> {
                 if (isFinishing() || isDestroyedCompat() || loadToken != wordsLoadToken) {
                     return;
@@ -674,78 +793,16 @@ public class LockQuizActivity extends Activity {
         }, "lock-words-loader").start();
     }
 
-    private WordLoadResult buildTodayWords() {
-        List<WordEntry> allWords = new ArrayList<>();
-        int resolvedMaxUnit = 1;
-        try {
-            InputStream input = getAssets().open("www/data/words.json");
-            ByteArrayOutputStream output = new ByteArrayOutputStream();
-            byte[] buffer = new byte[4096];
-            int read;
-            while ((read = input.read(buffer)) != -1) {
-                output.write(buffer, 0, read);
-            }
-            JSONArray words = new JSONArray(output.toString(StandardCharsets.UTF_8.name()));
-            for (int i = 0; i < words.length(); i++) {
-                JSONObject word = words.getJSONObject(i);
-                WordEntry entry = new WordEntry(
-                        word.optString("word", "benefit"),
-                        word.optString("part", "n."),
-                        word.optInt("unit", 1),
-                        word.optString("korean", "advantage; profit"),
-                        word.optString("english", "a good or helpful result")
-                );
-                resolvedMaxUnit = Math.max(resolvedMaxUnit, entry.unit);
-                allWords.add(entry);
-            }
-        } catch (Exception ignored) {
-            allWords.add(currentWord());
-        }
-
-        int resolvedTodayUnit = unitForToday(resolvedMaxUnit);
-        List<WordEntry> resolvedTodayWords = new ArrayList<>();
-        for (WordEntry entry : allWords) {
-            if (entry.unit == resolvedTodayUnit) {
-                resolvedTodayWords.add(entry);
-            }
-        }
-        if (resolvedTodayWords.isEmpty()) {
-            resolvedTodayWords.addAll(allWords);
-            if (!resolvedTodayWords.isEmpty()) {
-                resolvedTodayUnit = resolvedTodayWords.get(0).unit;
-            }
-        }
-        return new WordLoadResult(resolvedTodayWords, resolvedTodayUnit, resolvedMaxUnit);
-    }
-
-    private int unitForToday(int cycleMaxUnit) {
-        Calendar start = Calendar.getInstance();
-        start.set(2026, Calendar.MAY, 5, 0, 0, 0);
-        start.set(Calendar.MILLISECOND, 0);
-
-        Calendar today = Calendar.getInstance();
-        today.set(Calendar.HOUR_OF_DAY, 0);
-        today.set(Calendar.MINUTE, 0);
-        today.set(Calendar.SECOND, 0);
-        today.set(Calendar.MILLISECOND, 0);
-
-        long dayOffset = (today.getTimeInMillis() - start.getTimeInMillis()) / ONE_DAY_MS;
-        return (int) Math.floorMod(dayOffset, Math.max(1, cycleMaxUnit)) + 1;
-    }
-
     private boolean isDestroyedCompat() {
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed();
     }
 
-    private GradientDrawable lockBackground() {
-        return new GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{
-                        Color.rgb(18, 31, 45),
-                        Color.rgb(31, 69, 78),
-                        Color.rgb(17, 24, 37)
-                }
-        );
+    private ImageView lockBackgroundImage() {
+        ImageView image = new ImageView(this);
+        image.setImageResource(R.drawable.lockscreen_art);
+        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        image.setAdjustViewBounds(false);
+        return image;
     }
 
     private GradientDrawable rounded(int color, float radius) {
@@ -757,7 +814,7 @@ public class LockQuizActivity extends Activity {
 
     private GradientDrawable pillish(int color, float radius, int strokeColor) {
         GradientDrawable drawable = rounded(color, radius);
-        drawable.setStroke(dp(1), strokeColor);
+        drawable.setStroke(dp(2), strokeColor);
         return drawable;
     }
 
@@ -766,16 +823,16 @@ public class LockQuizActivity extends Activity {
     }
 
     private TextView roundIcon(String value, float size) {
-        TextView view = text(value, Color.WHITE, size, Typeface.BOLD);
+        TextView view = text(value, Color.rgb(30, 91, 118), size, Typeface.BOLD);
         view.setGravity(Gravity.CENTER);
-        view.setBackground(pill(Color.argb(42, 255, 255, 255), Color.argb(55, 255, 255, 255)));
+        view.setBackground(pill(Color.argb(168, 252, 254, 255), Color.argb(224, 148, 214, 234)));
         return view;
     }
 
     private TextView shortcut(String value) {
-        TextView view = text(value, Color.WHITE, 13, Typeface.BOLD);
+        TextView view = text(value, Color.rgb(30, 91, 118), 13, Typeface.BOLD);
         view.setGravity(Gravity.CENTER);
-        view.setBackground(pill(Color.argb(38, 255, 255, 255), Color.argb(60, 255, 255, 255)));
+        view.setBackground(pill(Color.argb(168, 252, 254, 255), Color.argb(224, 153, 217, 235)));
         return view;
     }
 
@@ -808,31 +865,4 @@ public class LockQuizActivity extends Activity {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
     }
 
-    private static class WordEntry {
-        final String word;
-        final String part;
-        final int unit;
-        final String korean;
-        final String english;
-
-        WordEntry(String word, String part, int unit, String korean, String english) {
-            this.word = word;
-            this.part = part;
-            this.unit = unit;
-            this.korean = korean;
-            this.english = english;
-        }
-    }
-
-    private static class WordLoadResult {
-        final List<WordEntry> words;
-        final int todayUnit;
-        final int maxUnit;
-
-        WordLoadResult(List<WordEntry> words, int todayUnit, int maxUnit) {
-            this.words = words;
-            this.todayUnit = todayUnit;
-            this.maxUnit = maxUnit;
-        }
-    }
 }
